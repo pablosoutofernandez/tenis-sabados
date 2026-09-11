@@ -1,0 +1,101 @@
+/*
+ | Paleta y utilidades del proyecto (Tailwind v4).
+ | Impórtalo desde resources/css/app.css:   @import './tenis.css';
+ | Si usas Tailwind v3, pasa los colores de @theme a tailwind.config.js.
+ |
+ | ── Dirección de diseño ──────────────────────────────────────────────
+ | Fondo oscuro con tono azul-carbón (no negro plano), inspirado en un
+ | partido nocturno bajo focos. Tres acentos, cada uno con un trabajo fijo,
+ | tomados de las superficies reales de una pista de tenis:
+ |   brand  → pista dura (azul)   — acciones, enlaces, foco
+ |   clay   → tierra batida (terracota) — avisos, "sin jugar"
+ |   ball   → la pelota (verde-lima) — el único detalle vistoso: los
+ |            puntos de la cuadrícula de clasificación son "pelotas ganadas"
+ | Tipografía: Bricolage Grotesque para titulares, Manrope para el resto.
+ | El @import de Google Fonts vive en app.css (tiene que ser lo primero del
+ | archivo raíz — si se queda aquí, al inlinearse este archivo después de
+ | @import 'tailwindcss', PostCSS se queja de "@import must precede all
+ | other statements").
+ */
+
+@theme {
+    --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-display: 'Bricolage Grotesque', 'Manrope', ui-sans-serif, sans-serif;
+
+    /* Superficies oscuras: 950 = fondo de página, 700 = borde más marcado */
+    --color-cream-50:  #12181f;
+    --color-cream-100: #1b2430;
+    --color-cream-200: #26313f;
+    --color-cream-300: #34414f;
+
+    /* Texto: 800 = fuerte/titulares, 700 = secundario (se usa con /NN de opacidad) */
+    --color-ink-800: #f3f6f8;
+    --color-ink-700: #a9b7c4;
+
+    /* Acento primario — pista dura */
+    --color-brand-50:  #16283a;
+    --color-brand-100: #1e3752;
+    --color-brand-300: #63b4f5;
+    --color-brand-400: #3e86c4;
+    --color-brand-500: #256aa8;
+    --color-brand-600: #1c5488;
+    --color-brand-700: #163f68;
+
+    /* Acento secundario — tierra batida */
+    --color-clay-300: #f0a47c;
+    --color-clay-500: #b24b26;
+
+    /* Acento terciario, de uso muy puntual — la pelota */
+    --color-ball-400: #d7e361;
+}
+
+@layer base {
+    body {
+        background-color: var(--color-cream-50);
+        color: var(--color-ink-800);
+    }
+
+    ::selection {
+        background-color: var(--color-brand-500);
+        color: white;
+    }
+
+    /* Oculta lo marcado con x-cloak hasta que Alpine arranca, para que el
+       cajón del menú móvil no aparezca un instante abierto antes de tiempo. */
+    [x-cloak] {
+        display: none !important;
+    }
+}
+
+@layer components {
+    .soft-card {
+        @apply bg-cream-100 rounded-2xl ring-1 ring-cream-200;
+    }
+
+    .h-display {
+        font-family: var(--font-display);
+        @apply font-semibold tracking-tight;
+    }
+
+    /* El único gesto decorativo de la interfaz: líneas de pista muy sutiles,
+       reservado a la cabecera compartida — en ningún otro sitio. */
+    .court-lines {
+        background-image: repeating-linear-gradient(
+            115deg,
+            rgb(99 180 245 / 0.05) 0px,
+            rgb(99 180 245 / 0.05) 1px,
+            transparent 1px,
+            transparent 64px
+        );
+    }
+}
+
+@layer utilities {
+    .shadow-soft {
+        box-shadow: 0 8px 24px -8px rgb(37 106 168 / 0.35);
+    }
+
+    .tabular-nums {
+        font-variant-numeric: tabular-nums;
+    }
+}
