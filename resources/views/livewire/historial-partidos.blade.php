@@ -38,65 +38,57 @@
                                 $b = $partido->equipo('b');
                             @endphp
                             <div wire:key="hist-partido-{{ $partido->id }}"
-                                 class="rounded-xl ring-1 ring-cream-200 bg-cream-100 px-4 py-3">
+                                 class="rounded-xl ring-1 ring-cream-200 bg-cream-100 px-4 py-4">
 
-                                <div class="flex flex-wrap items-center gap-3">
-                                    <span class="text-[10px] font-bold text-ink-700/45 w-12 shrink-0">Pista {{ $partido->pista }}</span>
+                                <div class="flex items-center justify-between gap-2 mb-3">
+                                    <span class="text-[10px] font-bold text-ink-700/45">Pista {{ $partido->pista }}</span>
 
-                                    <div class="flex-1 min-w-[220px] flex items-center gap-3">
-                                        <span class="text-sm font-semibold text-ink-800">{{ $a->pluck('nombre')->join(' + ') }}</span>
-                                        <span class="font-mono text-sm font-bold {{ $partido->jugado() ? 'text-ink-800' : 'text-ink-700/30' }}">
-                                            @if($partido->jugado())
-                                                {{ $partido->sets_a }} – {{ $partido->sets_b }}
-                                                @if($partido->detalle_sets)
-                                                    <span class="text-[10px] font-normal text-ink-700/45">
-                                                        ({{ collect($partido->detalle_sets)->map(fn ($s) => $s['a'].'-'.$s['b'])->join(' ') }})
-                                                    </span>
-                                                @endif
-                                            @else
-                                                – –
-                                            @endif
-                                        </span>
-                                        <span class="text-sm font-semibold text-ink-800">{{ $b->pluck('nombre')->join(' + ') }}</span>
-                                    </div>
-
-                                    <div class="ml-auto flex items-center gap-2">
+                                    <div class="flex items-center gap-2">
                                         @if($partido->retirado_id)
                                             <span class="text-[10px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md">
                                                 Retirada
                                             </span>
                                         @endif
-                                            <div class="ml-auto flex items-center gap-2">
-                                                @if($partido->retirado_id)
-                                                    <span class="text-[10px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md">
-            Retirada
-        </span>
-                                                @endif
 
-                                                {{-- Si NO está jugado: permite anotar con 'registrar-resultado' --}}
-                                                @if(! $partido->jugado())
-                                                    @can('registrar-resultado', $partido)
-                                                        <button wire:click="abrir({{ $partido->id }})"
-                                                                class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
-                                                            Anotar sets
-                                                        </button>
-                                                    @endcan
-                                                @else
-                                                    {{-- Si YA está jugado: requiere el nuevo permiso 'editar-resultado' --}}
-                                                    @can('editar-resultado')
-                                                        <button wire:click="abrir({{ $partido->id }})"
-                                                                class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
-                                                            Editar
-                                                        </button>
-                                                        <button wire:click="borrarResultado({{ $partido->id }})"
-                                                                wire:confirm="¿Borrar el resultado de este partido?"
-                                                                class="px-3 py-1.5 rounded-lg text-ink-700/50 hover:text-rose-300 text-xs font-bold transition">
-                                                            Borrar
-                                                        </button>
-                                                    @endcan
-                                                @endif
-                                            </div>
+                                        {{-- Si NO está jugado: permite anotar con 'registrar-resultado' --}}
+                                        @if(! $partido->jugado())
+                                            @can('registrar-resultado', $partido)
+                                                <button wire:click="abrir({{ $partido->id }})"
+                                                        class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition ring-1 ring-cream-300">
+                                                    Anotar sets
+                                                </button>
+                                            @endcan
+                                        @else
+                                            {{-- Si YA está jugado: requiere el permiso 'editar-resultado' --}}
+                                            @can('editar-resultado')
+                                                <button wire:click="abrir({{ $partido->id }})"
+                                                        class="px-2.5 py-1 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-[11px] font-bold transition">
+                                                    Editar
+                                                </button>
+                                                <button wire:click="borrarResultado({{ $partido->id }})"
+                                                        wire:confirm="¿Borrar el resultado de este partido?"
+                                                        class="px-2.5 py-1 rounded-lg text-ink-700/50 hover:text-rose-300 text-[11px] font-bold transition">
+                                                    Borrar
+                                                </button>
+                                            @endcan
+                                        @endif
                                     </div>
+                                </div>
+
+                                <div class="text-center">
+                                    <p class="text-sm font-semibold text-ink-800">{{ $a->pluck('nombre')->join(' + ') }}</p>
+
+                                    <p class="font-mono text-2xl font-bold my-0.5 {{ $partido->jugado() ? 'text-ink-800' : 'text-ink-700/30' }}">
+                                        {{ $partido->jugado() ? $partido->sets_a.' – '.$partido->sets_b : '—' }}
+                                    </p>
+
+                                    @if($partido->jugado() && $partido->detalle_sets)
+                                        <p class="text-[11px] font-mono text-ink-700/40 mb-1">
+                                            {{ collect($partido->detalle_sets)->map(fn ($s) => $s['a'].'-'.$s['b'])->join('  ') }}
+                                        </p>
+                                    @endif
+
+                                    <p class="text-sm font-semibold text-ink-800">{{ $b->pluck('nombre')->join(' + ') }}</p>
                                 </div>
 
                                 {{-- Formulario de resultado --}}
@@ -177,14 +169,6 @@
                                             Si alguien se retira, los rivales se llevan los {{ config('tenis.puntos_max_por_partido') }} puntos
                                             y su compañero suma 1 más.
                                         </p>
-                                    </div>
-                                @elseif($partido->jugado() && $verPuntuaciones)
-                                    <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                                        @foreach($partido->jugadores as $j)
-                                            <span class="text-[11px] text-ink-700/55">
-                                                {{ $j->nombre }} <span class="font-mono font-bold text-ink-800">+{{ $j->pivot->puntos }}</span>
-                                            </span>
-                                        @endforeach
                                     </div>
                                 @endif
                             </div>
