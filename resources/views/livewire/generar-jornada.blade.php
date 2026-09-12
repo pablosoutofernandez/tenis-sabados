@@ -95,11 +95,13 @@
                             Publicar jornada
                         </button>
                     @endif
-                    <button wire:click="eliminarJornada"
+                    @can('eliminar-jornada')
+                        <button wire:click="eliminarJornada"
                             wire:confirm="¿Eliminar esta jornada con sus partidos y resultados?"
                             class="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/30 text-xs font-bold hover:bg-rose-500/20 transition">
                         Eliminar jornada
                     </button>
+                    @endcan
                 </div>
             </div>
 

@@ -66,19 +66,36 @@
                                                 Retirada
                                             </span>
                                         @endif
-                                        @can('registrar-resultado', $partido)
-                                            <button wire:click="abrir({{ $partido->id }})"
-                                                    class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
-                                                {{ $partido->jugado() ? 'Editar' : 'Anotar sets' }}
-                                            </button>
-                                            @if($partido->jugado())
-                                                <button wire:click="borrarResultado({{ $partido->id }})"
-                                                        wire:confirm="¿Borrar el resultado de este partido?"
-                                                        class="px-3 py-1.5 rounded-lg text-ink-700/50 hover:text-rose-300 text-xs font-bold transition">
-                                                    Borrar
-                                                </button>
-                                            @endif
-                                        @endcan
+                                            <div class="ml-auto flex items-center gap-2">
+                                                @if($partido->retirado_id)
+                                                    <span class="text-[10px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md">
+            Retirada
+        </span>
+                                                @endif
+
+                                                {{-- Si NO está jugado: permite anotar con 'registrar-resultado' --}}
+                                                @if(! $partido->jugado())
+                                                    @can('registrar-resultado', $partido)
+                                                        <button wire:click="abrir({{ $partido->id }})"
+                                                                class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
+                                                            Anotar sets
+                                                        </button>
+                                                    @endcan
+                                                @else
+                                                    {{-- Si YA está jugado: requiere el nuevo permiso 'editar-resultado' --}}
+                                                    @can('editar-resultado')
+                                                        <button wire:click="abrir({{ $partido->id }})"
+                                                                class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
+                                                            Editar
+                                                        </button>
+                                                        <button wire:click="borrarResultado({{ $partido->id }})"
+                                                                wire:confirm="¿Borrar el resultado de este partido?"
+                                                                class="px-3 py-1.5 rounded-lg text-ink-700/50 hover:text-rose-300 text-xs font-bold transition">
+                                                            Borrar
+                                                        </button>
+                                                    @endcan
+                                                @endif
+                                            </div>
                                     </div>
                                 </div>
 

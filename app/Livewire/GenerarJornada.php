@@ -156,6 +156,9 @@ class GenerarJornada extends Component
 
     public function eliminarJornada(): void
     {
+        // Protege el método en el backend
+        $this->authorize('eliminar-jornada');
+
         $jornada = Jornada::find($this->jornadaId);
 
         if ($jornada) {
@@ -169,7 +172,6 @@ class GenerarJornada extends Component
         $this->avisos    = [];
         session()->flash('success', 'Jornada eliminada.');
     }
-
     /** Abre el modo de edición de un partido: solo si aún no tiene resultado. */
     public function editarPartido(int $partidoId): void
     {

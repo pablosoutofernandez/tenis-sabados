@@ -75,7 +75,11 @@ class HistorialPartidos extends Component
     {
         $partido = Partido::with('jugadores')->findOrFail($partidoId);
 
-        Gate::authorize('registrar-resultado', $partido);
+        if ($partido->jugado()) {
+            $this->authorize('editar-resultado');
+        } else {
+            $this->authorize('registrar-resultado', $partido);
+        }
 
         $datos = $this->resultados[$partidoId] ?? null;
         if (! $datos) {
@@ -158,7 +162,7 @@ class HistorialPartidos extends Component
     {
         $partido = Partido::with('jugadores')->findOrFail($partidoId);
 
-        Gate::authorize('registrar-resultado', $partido);
+        $this->authorize('editar-resultado');
 
         $marcador = collect($partido->detalle_sets ?: [])->map(fn ($s) => $s['a'].'-'.$s['b'])->join(' ')
             ?: $partido->sets_a.'-'.$partido->sets_b;

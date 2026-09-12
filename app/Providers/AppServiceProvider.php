@@ -44,5 +44,7 @@ class AppServiceProvider extends ServiceProvider
         // Los jugadores ya no anotan sus propios sets — demasiado fácil de
         // manipular un resultado que a uno mismo le interesa.
         Gate::define('registrar-resultado', fn (User $user, Partido $partido) => $user->esOrganizador());
+        Gate::define('eliminar-jornada',    fn (User $user) => false);
+        Gate::define('editar-resultado',    fn (User $user) => false);
     }
 }
