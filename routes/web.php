@@ -11,6 +11,7 @@ Route::get('/', function () {
     if (! Auth::check()) {
         return redirect()->route('clasificacion');
     }
+    Route::get('/historial', \App\Livewire\HistorialPartidos::class)->name('historial');
 
     // A cada rol le lleva a lo primero que sí puede ver: el organizador no
     // tiene acceso a la clasificación, así que entra directo a montar jornada.
@@ -36,7 +37,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/password', \App\Livewire\Auth\CambiarPassword::class)->name('password.cambiar');
 
-    Route::get('/historial', \App\Livewire\HistorialPartidos::class)->name('historial');
+
 
     // Cualquier cuenta vinculada a un jugador puede ver sus propias
     // estadísticas, sea cual sea su rol.
