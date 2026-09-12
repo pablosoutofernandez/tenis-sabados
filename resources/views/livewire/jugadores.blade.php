@@ -48,13 +48,21 @@
                         @error('nivel')<p class="text-[11px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
                     </div>
 
-                    <div class="flex items-end pb-2">
+                    <div class="flex items-end gap-4 pb-2">
                         <label class="flex items-center gap-2 text-sm font-semibold text-ink-800 cursor-pointer">
                             <input type="checkbox" wire:model="activo" class="rounded border-cream-300 text-brand-500 focus:ring-brand-300">
                             Juega esta temporada
                         </label>
+                        <label class="flex items-center gap-2 text-sm font-semibold text-ink-800 cursor-pointer">
+                            <input type="checkbox" wire:model="es_refuerzo" class="rounded border-cream-300 text-brand-500 focus:ring-brand-300">
+                            Jugador de refuerzo
+                        </label>
                     </div>
                 </div>
+                <p class="text-[10px] text-ink-700/45 mt-2">
+                    Un refuerzo se apunta igual que cualquiera y su nivel se ajusta igual tras cada resultado,
+                    pero no sale en la clasificación y no se marca disponible por defecto al montar jornada.
+                </p>
 
                 <div class="flex gap-2 mt-4">
                     <button wire:click="guardar"
@@ -100,7 +108,12 @@
                                             {{ $j->iniciales }}
                                         </div>
                                         <div>
-                                            <p class="font-semibold text-ink-800">{{ $j->nombre }}</p>
+                                            <p class="font-semibold text-ink-800 flex items-center gap-1.5">
+                                                {{ $j->nombre }}
+                                                @if($j->es_refuerzo)
+                                                    <span class="px-1.5 py-0.5 rounded bg-brand-500/10 text-brand-300 text-[9px] font-bold uppercase tracking-wider">Refuerzo</span>
+                                                @endif
+                                            </p>
                                             @unless($j->activo)
                                                 <p class="text-[10px] text-ink-700/45 font-semibold">No juega esta temporada</p>
                                             @endunless

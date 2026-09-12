@@ -35,7 +35,8 @@ class GenerarJornada extends Component
         if ($jornadaId) {
             $this->cargar(Jornada::with('jugadores')->findOrFail($jornadaId));
         } else {
-            $this->disponibles = Jugador::activos()->pluck('id')->all();
+            // Refuerzos empiezan desmarcados: se apuntan a mano cuando hacen falta.
+            $this->disponibles = Jugador::activos()->where('es_refuerzo', false)->pluck('id')->all();
             $this->buscarJornadaDeLaFecha();
         }
     }

@@ -12,11 +12,12 @@ class Jugador extends Model
 {
     protected $table = 'jugadores';
 
-    protected $fillable = ['nombre', 'nivel', 'activo'];
+    protected $fillable = ['nombre', 'nivel', 'activo', 'es_refuerzo'];
 
     protected $casts = [
-        'nivel'  => 'float',
-        'activo' => 'boolean',
+        'nivel'       => 'float',
+        'activo'      => 'boolean',
+        'es_refuerzo' => 'boolean',
     ];
 
     public function partidos(): BelongsToMany
@@ -100,7 +101,8 @@ class Jugador extends Model
             ->pluck(DB::raw('COUNT(*) as total'), 'pj.jugador_id');
     }
 
-    /** Clasificación ordenada: puntos totales, desglose y partidos jugados. */
+    /** Clasificación ordenada: puntos totales, desglose y partidos jugados.
+     *  No incluye a los jugadores de refuerzo — no compiten por la temporada. */
     public static function clasificacion(?int $anio = null): Collection
     {
         $puntosPartidos = static::puntosPartidos($anio);
@@ -108,6 +110,7 @@ class Jugador extends Model
         $jugados        = static::partidosJugadosPorJugador($anio);
 
         return static::query()
+            ->where('es_refuerzo', false)
             ->orderBy('nombre')
             ->get()
             ->map(fn (Jugador $j) => (object) [

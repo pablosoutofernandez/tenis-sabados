@@ -62,7 +62,12 @@
                         </span>
                         <span class="min-w-0">
                             <span class="block text-sm font-bold text-ink-800 truncate">{{ $j->nombre }}</span>
-                            <span class="block text-[10px] font-mono text-ink-700/50">nivel {{ number_format($j->nivel, 1) }}</span>
+                            <span class="block text-[10px] font-mono text-ink-700/50">
+                                nivel {{ number_format($j->nivel, 1) }}
+                                @if($j->es_refuerzo)
+                                    · refuerzo
+                                @endif
+                            </span>
                         </span>
                     </button>
                 @endforeach

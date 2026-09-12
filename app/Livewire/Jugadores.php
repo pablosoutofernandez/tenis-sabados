@@ -23,6 +23,7 @@ class Jugadores extends Component
     public string  $nombre      = '';
     public float   $nivel       = 5.0;
     public bool    $activo      = true;
+    public bool    $es_refuerzo = false;
 
     public ?int $confirmandoId = null;
 
@@ -39,6 +40,7 @@ class Jugadores extends Component
             // Elo tras cada resultado y no debe quedarse encajonado en 10.
             'nivel'       => ['required', 'numeric', 'min:1'],
             'activo'      => ['boolean'],
+            'es_refuerzo' => ['boolean'],
         ];
     }
 
@@ -69,6 +71,7 @@ class Jugadores extends Component
         $this->nombre      = $jugador->nombre;
         $this->nivel       = $jugador->nivel;
         $this->activo      = $jugador->activo;
+        $this->es_refuerzo = $jugador->es_refuerzo;
         $this->formVisible = true;
     }
 
@@ -108,6 +111,7 @@ class Jugadores extends Component
         $this->nombre      = '';
         $this->nivel       = 5.0;
         $this->activo      = true;
+        $this->es_refuerzo = false;
         $this->formVisible = false;
         $this->resetValidation();
     }
