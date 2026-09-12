@@ -87,13 +87,13 @@
                     {{-- Regla de la escala --}}
                     <div class="flex items-center gap-3 mb-2">
                         <div class="w-24 shrink-0"></div>
+                        <div class="w-10 shrink-0"></div>
                         <div class="flex-1 relative h-4">
                             @for($m = 10; $m <= $escala; $m += 10)
                                 <span class="absolute -translate-x-1/2 text-[10px] font-bold text-ink-700/45"
                                       style="left: {{ ($m / $escala) * 100 }}%">{{ $m }}</span>
                             @endfor
                         </div>
-                        <div class="w-10 shrink-0"></div>
                     </div>
 
                     @forelse($filas as $fila)
@@ -104,13 +104,13 @@
                                 <span class="text-xs font-bold text-ink-800 truncate">{{ $fila->nombre }}</span>
                             </div>
 
+                            <div class="w-10 shrink-0 text-left font-mono text-xs font-bold text-ink-800">{{ $fila->puntos }}</div>
+
                             <div class="flex-1 grid gap-[2px]" style="grid-template-columns: repeat({{ $escala }}, minmax(0, 1fr));">
                                 @for($i = 1; $i <= $escala; $i++)
                                     <span class="aspect-square rounded-full {{ $i <= $fila->puntos ? 'bg-ball-400' : 'bg-cream-200' }}"></span>
                                 @endfor
                             </div>
-
-                            <div class="w-10 shrink-0 text-right font-mono text-xs font-bold text-ink-800">{{ $fila->puntos }}</div>
                         </div>
                     @empty
                         <p class="py-10 text-center text-sm text-ink-700/55">

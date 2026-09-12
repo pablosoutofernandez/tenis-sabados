@@ -50,9 +50,14 @@
 }
 
 @layer base {
+    html {
+        overflow-x: hidden;
+    }
+
     body {
         background-color: var(--color-cream-50);
         color: var(--color-ink-800);
+        overflow-x: hidden;
     }
 
     ::selection {

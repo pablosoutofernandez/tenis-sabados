@@ -5,8 +5,7 @@
 
 <title>{{ config('tenis.temporada.nombre') }}</title>
 
-{{-- Favicon: SVG para navegadores modernos, PNG de respaldo para el resto --}}
-<link rel="icon" type="image/svg+xml" href="/logo.svg">
+{{-- Favicon: ahora el logo es un PNG, no un SVG --}}
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
