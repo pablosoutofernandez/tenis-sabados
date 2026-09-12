@@ -17,8 +17,12 @@ return [
     'pistas_min' => 2,
     'pistas_max' => 3,
 
-    // Escala de la tabla de clasificación (columnas de puntos).
-    'escala_clasificacion'   => 100,
+    // Escala de la tabla de clasificación (columnas de puntos). Esto es
+    // solo el MÍNIMO — si el líder tiene más, la escala sube sola hasta
+    // el siguiente múltiplo de 10 (ver Clasificacion::render()). No lo
+    // subas mucho: un mínimo alto deja huecos vacíos al principio de
+    // temporada, cuando nadie ha llegado ahí todavía.
+    'escala_clasificacion'   => 30,
 
     // Ventanas de no repetición. Se le piden a la IA como condiciones a cumplir;
     // más allá de estas jornadas, no repetir es solo una preferencia.

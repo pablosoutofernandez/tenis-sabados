@@ -30,7 +30,7 @@
     x-cloak
     :class="menuAbierto ? 'translate-x-0' : '-translate-x-full'"
     class="md:translate-x-0 fixed md:static inset-y-0 left-0 z-50 flex flex-col w-64 md:w-56 shrink-0
-           min-h-screen md:min-h-[calc(100vh-64px)] border-r border-cream-200 bg-cream-50 md:bg-cream-50/40
+           min-h-dvh md:min-h-[calc(100vh-64px)] border-r border-cream-200 bg-cream-50 md:bg-cream-50/40
            px-3 py-6 transition-transform duration-200 ease-out overflow-y-auto">
 
     <div class="flex items-center justify-between mb-4 px-3">
