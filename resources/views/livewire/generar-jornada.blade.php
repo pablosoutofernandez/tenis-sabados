@@ -69,12 +69,21 @@
             </div>
 
             <div class="flex items-center gap-3 mt-4">
-                <button wire:click="generar" wire:loading.attr="disabled" wire:target="generar"
-                        class="px-5 py-2.5 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white text-sm font-bold shadow-soft hover:from-brand-500 hover:to-brand-700 transition disabled:opacity-50">
-                    <span wire:loading.remove wire:target="generar">{{ $jornada?->partidos->count() ? 'Volver a repartir' : 'Generar emparejamientos' }}</span>
-                    <span wire:loading wire:target="generar">Repartiendo pistas…</span>
-                </button>
-                <p wire:loading wire:target="generar" class="text-xs text-ink-700/55">Puede tardar unos segundos.</p>
+                @if($jornada?->estado === 'publicada')
+                    <span class="px-4 py-2.5 rounded-xl bg-cream-100 text-ink-700/50 text-xs font-bold flex items-center gap-2 cursor-not-allowed">
+                        <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                        </svg>
+                        Jornada publicada (no se pueden alterar emparejamientos)
+                    </span>
+                @else
+                    <button wire:click="generar" wire:loading.attr="disabled" wire:target="generar"
+                            class="px-5 py-2.5 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white text-sm font-bold shadow-soft hover:from-brand-500 hover:to-brand-700 transition disabled:opacity-50">
+                        <span wire:loading.remove wire:target="generar">{{ $jornada?->partidos->count() ? 'Volver a repartir' : 'Generar emparejamientos' }}</span>
+                        <span wire:loading wire:target="generar">Repartiendo pistas…</span>
+                    </button>
+                    <p wire:loading wire:target="generar" class="text-xs text-ink-700/55">Puede tardar unos segundos.</p>
+                @endif
             </div>
         </div>
 
@@ -94,19 +103,19 @@
                                 class="px-4 py-2 rounded-xl bg-cream-200 hover:bg-cream-300 text-ink-800 text-xs font-bold transition">
                             Publicar jornada
                         </button>
+                        @can('eliminar-jornada')
+                            <button wire:click="eliminarJornada"
+                                    wire:confirm="¿Eliminar esta jornada con sus partidos y resultados?"
+                                    class="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/30 text-xs font-bold hover:bg-rose-500/20 transition">
+                                Eliminar jornada
+                            </button>
+                        @endcan
                     @endif
-                    @can('eliminar-jornada')
-                        <button wire:click="eliminarJornada"
-                            wire:confirm="¿Eliminar esta jornada con sus partidos y resultados?"
-                            class="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/30 text-xs font-bold hover:bg-rose-500/20 transition">
-                        Eliminar jornada
-                    </button>
-                    @endcan
                 </div>
             </div>
 
             {{-- Repeticiones que no se han podido evitar --}}
-            @if($avisos)
+            @if($avisos && $jornada->estado !== 'publicada')
                 <div class="mb-4 px-4 py-3 rounded-xl bg-amber-500/10 ring-1 ring-amber-500/30 text-sm text-amber-200">
                     <p class="font-bold mb-1">Revisa esto antes de publicar:</p>
                     <ul class="space-y-0.5">
@@ -133,13 +142,11 @@
                     <div wire:key="partido-{{ $partido->id }}" class="soft-card p-5">
                         <div class="flex items-center justify-between mb-4">
                             <span class="text-xs font-bold text-ink-700/50">Pista {{ $partido->pista }}</span>
-                            @if($editandoPartidoId !== $partido->id)
-                                @unless($partido->jugado())
-                                    <button wire:click="editarPartido({{ $partido->id }})"
-                                            class="text-[11px] font-bold text-brand-300 hover:text-white transition">
-                                        Corregir
-                                    </button>
-                                @endunless
+                            @if($editandoPartidoId !== $partido->id && $jornada->estado !== 'publicada' && !$partido->jugado())
+                                <button wire:click="editarPartido({{ $partido->id }})"
+                                        class="text-[11px] font-bold text-brand-300 hover:text-white transition">
+                                    Corregir
+                                </button>
                             @endif
                         </div>
 

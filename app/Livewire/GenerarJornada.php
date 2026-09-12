@@ -98,21 +98,26 @@ class GenerarJornada extends Component
 
     public function generar(EmparejadorIA $ia): void
     {
+        $this->authorize('gestionar-jornadas');
+
         $this->error  = null;
         $this->avisos = [];
 
-        if ($this->pistas < 1) {
-            $this->error = 'Marca al menos 4 jugadores disponibles para poder montar una pista.';
+        // Buscar si ya existe la jornada para esta fecha
+        $jornadaExistente = Jornada::whereDate('fecha', $this->fecha)->first();
 
+        // Si la jornada existe y ya está publicada, bloqueamos la regeneración
+        if ($jornadaExistente && $jornadaExistente->estado === 'publicada') {
+            $this->error = 'No se puede regenerar una jornada que ya ha sido publicada.';
             return;
         }
 
-        // updateOrCreate compararía el string exacto de 'fecha', pero Eloquent
-        // guarda las columnas con cast 'date' con hora incluida (00:00:00),
-        // así que la búsqueda nunca encontraría la jornada ya creada y
-        // acabaría intentando insertar una fila duplicada para el mismo día.
-        $jornada = Jornada::whereDate('fecha', $this->fecha)->first()
-            ?? new Jornada(['fecha' => $this->fecha]);
+        if ($this->pistas < 1) {
+            $this->error = 'Marca al menos 4 jugadores disponibles para poder montar una pista.';
+            return;
+        }
+
+        $jornada = $jornadaExistente ?? new Jornada(['fecha' => $this->fecha]);
 
         $jornada->fill(['pistas' => $this->pistas, 'estado' => 'borrador'])->save();
 
@@ -147,6 +152,8 @@ class GenerarJornada extends Component
 
     public function publicar(): void
     {
+        $this->authorize('gestionar-jornadas');
+
         $jornada = Jornada::findOrFail($this->jornadaId);
         $jornada->update(['estado' => 'publicada']);
 
@@ -156,12 +163,17 @@ class GenerarJornada extends Component
 
     public function eliminarJornada(): void
     {
-        // Protege el método en el backend
-        $this->authorize('eliminar-jornada');
+        $this->authorize('gestionar-jornadas');
 
         $jornada = Jornada::find($this->jornadaId);
 
         if ($jornada) {
+            // Si la jornada ya está publicada, impedimos su eliminación
+            if ($jornada->estado === 'publicada') {
+                $this->error = 'No se puede eliminar una jornada que ya ha sido publicada.';
+                return;
+            }
+
             $fecha = $jornada->fecha->format('d/m/Y');
             $jornada->delete();
 
@@ -172,14 +184,21 @@ class GenerarJornada extends Component
         $this->avisos    = [];
         session()->flash('success', 'Jornada eliminada.');
     }
-    /** Abre el modo de edición de un partido: solo si aún no tiene resultado. */
+
+    /** Abre el modo de edición de un partido: solo si aún no tiene resultado y la jornada es borrador. */
     public function editarPartido(int $partidoId): void
     {
-        $partido = Partido::with('jugadores')->findOrFail($partidoId);
+        $this->authorize('gestionar-jornadas');
+
+        $partido = Partido::with(['jugadores', 'jornada'])->findOrFail($partidoId);
+
+        if ($partido->jornada->estado === 'publicada') {
+            $this->error = 'No se pueden modificar los emparejamientos de una jornada ya publicada.';
+            return;
+        }
 
         if ($partido->jugado()) {
             $this->error = 'Este partido ya tiene resultado; borra el resultado en Historial antes de tocar las parejas.';
-
             return;
         }
 
@@ -206,18 +225,24 @@ class GenerarJornada extends Component
     /** Guarda el cambio de parejas de este partido concreto. */
     public function guardarEdicionPartido(): void
     {
+        $this->authorize('gestionar-jornadas');
         $this->error = null;
+
+        $partido = Partido::with('jornada')->findOrFail($this->editandoPartidoId);
+
+        if ($partido->jornada->estado === 'publicada') {
+            $this->error = 'No se pueden modificar los emparejamientos de una jornada ya publicada.';
+            $this->cancelarEdicionPartido();
+            return;
+        }
 
         $enA = collect($this->equiposEdicion)->filter(fn ($e) => $e === 'a')->count();
         $enB = collect($this->equiposEdicion)->filter(fn ($e) => $e === 'b')->count();
 
         if ($enA !== 2 || $enB !== 2) {
             $this->error = 'Cada pareja necesita exactamente 2 jugadores.';
-
             return;
         }
-
-        $partido = Partido::findOrFail($this->editandoPartidoId);
 
         foreach ($this->equiposEdicion as $jugadorId => $equipo) {
             $partido->jugadores()->updateExistingPivot($jugadorId, ['equipo' => $equipo]);
@@ -230,7 +255,7 @@ class GenerarJornada extends Component
         Auditoria::registrar(
             'partido.corregido',
             'Pista '.$partido->pista.' de la jornada del '.$partido->jornada->fecha->format('d/m/Y')
-                .' cambiada a mano: '.$parejaA.' vs '.$parejaB.'.',
+            .' cambiada a mano: '.$parejaA.' vs '.$parejaB.'.',
             $partido->jornada_id,
         );
 
