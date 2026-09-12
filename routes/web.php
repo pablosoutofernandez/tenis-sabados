@@ -6,12 +6,12 @@ use Illuminate\Support\Facades\Route;
 // ── Público ─────────────────────────────────────────────────────────────
 // La clasificación se puede consultar sin cuenta: es el tablón del torneo.
 Route::get('/clasificacion', \App\Livewire\Clasificacion::class)->name('clasificacion');
-
+Route::get('/historial', \App\Livewire\HistorialPartidos::class)->name('historial');
 Route::get('/', function () {
     if (! Auth::check()) {
         return redirect()->route('clasificacion');
     }
-    Route::get('/historial', \App\Livewire\HistorialPartidos::class)->name('historial');
+
 
     // A cada rol le lleva a lo primero que sí puede ver: el organizador no
     // tiene acceso a la clasificación, así que entra directo a montar jornada.

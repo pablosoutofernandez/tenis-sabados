@@ -7,7 +7,7 @@
     $enlaces = collect([
         ['ruta' => 'clasificacion',     'texto' => 'Clasificación',      'icono' => '🎾', 'gate' => 'ver-puntuaciones', 'publico' => true],
         ['ruta' => 'jornada.generar',   'texto' => 'Montar jornada',     'icono' => '🗓️', 'gate' => 'gestionar-jornadas'],
-        ['ruta' => 'historial',         'texto' => 'Historial',          'icono' => '📋', 'gate' => null, 'publico' => true],
+        ['ruta' => 'historial',         'texto' => 'Partidos',          'icono' => '📋', 'gate' => null, 'publico' => true],
         ['ruta' => 'mis-estadisticas',  'texto' => 'Mis estadísticas',   'icono' => '📈', 'gate' => null],
         ['ruta' => 'jugadores',         'texto' => 'Jugadores',          'icono' => '👥', 'gate' => 'gestionar-jugadores'],
         ['ruta' => 'ajustes-ia',        'texto' => 'Ajustes',            'icono' => '🎛️', 'gate' => 'gestionar-ajustes'],
