@@ -23,10 +23,10 @@
 
         @auth
             <div class="flex items-center gap-3 ml-auto">
-                <span class="text-xs text-ink-700/55 hidden sm:inline">
-                    {{ auth()->user()?->name }}
-                    <span class="text-ink-700/35">· {{ auth()->user()?->rol_nombre }}</span>
-                </span>
+        <span class="text-xs text-ink-700/55 hidden sm:inline">
+            {{ auth()->user()?->name }}
+            <span class="text-ink-700/35">· {{ auth()->user()?->rol_nombre }}</span>
+        </span>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
                     <button type="submit"
