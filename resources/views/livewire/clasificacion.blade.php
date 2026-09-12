@@ -121,17 +121,15 @@
             </div>
         </div>
 
-        <div class="grid lg:grid-cols-3 gap-6">
+        <div class="space-y-6">
             {{-- Detalle numérico --}}
-            <div class="soft-card p-5 lg:col-span-1">
+            <div class="soft-card p-5">
                 <h2 class="font-bold text-ink-800 mb-3">Partidos jugados</h2>
-                <div class="overflow-x-auto">
-                <table class="w-full text-sm min-w-[380px]">
+                <table class="w-full text-sm">
                     <thead class="text-[10px] uppercase tracking-widest text-ink-700/50 font-bold">
                         <tr>
                             <th class="py-2 text-left">Jugador</th>
                             <th class="py-2 text-center">Puntos</th>
-                            <th class="py-2 text-center">Ajuste</th>
                             <th class="py-2 text-center">Partidos</th>
                             <th class="py-2 text-center">Media</th>
                         </tr>
@@ -141,9 +139,6 @@
                             <tr>
                                 <td class="py-2 font-semibold text-ink-800">{{ $fila->nombre }}</td>
                                 <td class="py-2 text-center font-mono text-xs font-bold text-ink-800">{{ $fila->puntos }}</td>
-                                <td class="py-2 text-center font-mono text-xs {{ $fila->ajuste ? 'text-brand-300 font-bold' : 'text-ink-700/30' }}">
-                                    {{ $fila->ajuste ? ($fila->ajuste > 0 ? '+' : '').$fila->ajuste : '—' }}
-                                </td>
                                 <td class="py-2 text-center text-ink-700/70">{{ $fila->jugados }}</td>
                                 <td class="py-2 text-center font-mono text-xs text-ink-700/70">
                                     {{ $fila->jugados ? number_format($fila->puntos_partidos / $fila->jugados, 2) : '—' }}
@@ -152,11 +147,10 @@
                         @endforeach
                     </tbody>
                 </table>
-                </div>
             </div>
 
             {{-- Normas --}}
-            <div class="soft-card p-5 lg:col-span-2">
+            <div class="soft-card p-5">
                 <h2 class="font-bold text-ink-800 mb-3">Normas {{ $anio }}</h2>
                 <ul class="space-y-2">
                     @foreach($normas as $norma)
