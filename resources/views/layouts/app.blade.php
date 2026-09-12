@@ -18,7 +18,7 @@
             <a href="{{ auth()->check() ? route('inicio') : route('clasificacion') }}" wire:navigate
                class="flex items-center gap-2 h-display text-lg text-ink-800 flex-1 md:flex-none">
                 <img src="/logo.svg" alt="" class="w-6 h-6 rounded-md" width="24" height="24">
-                Tenis Sábados
+                Sábados Tenis
             </a>
 
                 <div class="flex items-center gap-3 ml-auto">

@@ -5,6 +5,7 @@ namespace App\Livewire;
 use App\Models\Auditoria;
 use App\Models\Jornada;
 use App\Models\Jugador;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -23,8 +24,6 @@ class Clasificacion extends Component
 
     public function mount(): void
     {
-        // Pública: cualquiera puede consultarla sin cuenta. El único que la
-        // tiene vetada es el organizador, que reparte las jornadas a ciegas.
         if (Auth::check()) {
             Gate::authorize('ver-puntuaciones');
         }
@@ -34,7 +33,6 @@ class Clasificacion extends Component
 
     public function updatedAnio(): void
     {
-        // Si cambias de año con el panel abierto, refresca los valores.
         if ($this->editando) {
             $this->abrirEdicion();
         }
@@ -79,12 +77,13 @@ class Clasificacion extends Component
 
     public function render()
     {
-        $filas = Jugador::clasificacion($this->anio)
+        // Aseguramos la obtención de la colección de filas
+        $clasificacion = Jugador::clasificacion($this->anio);
+
+        $filas = collect($clasificacion)
             ->when($this->soloActivos, fn ($c) => $c->where('activo', true))
             ->values();
 
-        // La escala crece de 10 en 10 según el líder; nunca baja de 30 columnas
-        // ni de la escala configurada del cartel.
         $lider  = (int) ($filas->max('puntos') ?? 0);
         $escala = max(
             30,
@@ -92,10 +91,14 @@ class Clasificacion extends Component
             (int) (ceil(max($lider, 1) / 10) * 10),
         );
 
+        // Conversión segura de fechas parseando la cadena a Carbon
         $anios = Jornada::orderByDesc('fecha')->pluck('fecha')
-            ->map(fn ($f) => (int) $f->year)
+            ->filter()
+            ->map(fn ($f) => (int) Carbon::parse($f)->year)
             ->push((int) now()->year)
-            ->unique()->sortDesc()->values();
+            ->unique()
+            ->sortDesc()
+            ->values();
 
         $jugadoresEdicion = $this->editando
             ? Jugador::orderBy('nombre')->get(['id', 'nombre'])
