@@ -4,9 +4,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 // ── Público ─────────────────────────────────────────────────────────────
-// Accesibles tanto para visitantes como para usuarios autenticados:
+// La clasificación se puede consultar sin cuenta: es el tablón del torneo.
 Route::get('/clasificacion', \App\Livewire\Clasificacion::class)->name('clasificacion');
-Route::get('/historial',     \App\Livewire\HistorialPartidos::class)->name('historial');
 
 Route::get('/', function () {
     if (! Auth::check()) {
@@ -36,6 +35,12 @@ Route::post('/salir', function () {
 Route::middleware('auth')->group(function () {
 
     Route::get('/password', \App\Livewire\Auth\CambiarPassword::class)->name('password.cambiar');
+
+    Route::get('/historial', \App\Livewire\HistorialPartidos::class)->name('historial');
+
+    // Cualquier cuenta vinculada a un jugador puede ver sus propias
+    // estadísticas, sea cual sea su rol.
+    Route::get('/mis-estadisticas', \App\Livewire\MisEstadisticas::class)->name('mis-estadisticas');
 
     Route::get('/jornada',             \App\Livewire\GenerarJornada::class)->name('jornada.generar');
     Route::get('/jornada/{jornadaId}', \App\Livewire\GenerarJornada::class)->name('jornada.ver');

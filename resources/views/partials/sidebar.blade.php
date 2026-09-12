@@ -2,15 +2,17 @@
     $usuario = auth()->user();
 
     // Cada enlace lleva el permiso que hace falta para verlo; los que no
-    // aplican al rol (o al visitante sin cuenta) ni se pintan.
+    // aplican al rol (o al visitante sin cuenta) ni se pintan. 'gate' a
+    // null significa "cualquier cuenta autenticada, sin permiso especial".
     $enlaces = collect([
-        ['ruta' => 'clasificacion',   'texto' => 'Clasificación',  'icono' => '🎾', 'gate' => 'ver-puntuaciones', 'publico' => true],
-        ['ruta' => 'jornada.generar', 'texto' => 'Montar jornada', 'icono' => '🗓️', 'gate' => 'gestionar-jornadas'],
-        ['ruta' => 'historial',       'texto' => 'Historial',      'icono' => '📋', 'gate' => null, 'publico' => true],
-        ['ruta' => 'jugadores',       'texto' => 'Jugadores',      'icono' => '👥', 'gate' => 'gestionar-jugadores'],
-        ['ruta' => 'ajustes-ia',      'texto' => 'Ajustes',        'icono' => '🎛️', 'gate' => 'gestionar-ajustes'],
-        ['ruta' => 'usuarios',        'texto' => 'Usuarios',       'icono' => '🔑', 'gate' => 'gestionar-usuarios'],
-        ['ruta' => 'auditoria',       'texto' => 'Actividad',      'icono' => '📜', 'gate' => 'ver-auditoria'],
+        ['ruta' => 'clasificacion',     'texto' => 'Clasificación',      'icono' => '🎾', 'gate' => 'ver-puntuaciones', 'publico' => true],
+        ['ruta' => 'jornada.generar',   'texto' => 'Montar jornada',     'icono' => '🗓️', 'gate' => 'gestionar-jornadas'],
+        ['ruta' => 'historial',         'texto' => 'Historial',          'icono' => '📋', 'gate' => null],
+        ['ruta' => 'mis-estadisticas',  'texto' => 'Mis estadísticas',   'icono' => '📈', 'gate' => null],
+        ['ruta' => 'jugadores',         'texto' => 'Jugadores',          'icono' => '👥', 'gate' => 'gestionar-jugadores'],
+        ['ruta' => 'ajustes-ia',        'texto' => 'Ajustes',            'icono' => '🎛️', 'gate' => 'gestionar-ajustes'],
+        ['ruta' => 'usuarios',          'texto' => 'Usuarios',           'icono' => '🔑', 'gate' => 'gestionar-usuarios'],
+        ['ruta' => 'auditoria',         'texto' => 'Actividad',          'icono' => '📜', 'gate' => 'ver-auditoria'],
     ])->filter(function ($e) use ($usuario) {
         if (! $usuario) {
             return $e['publico'] ?? false;
@@ -29,7 +31,7 @@
     :class="menuAbierto ? 'translate-x-0' : '-translate-x-full'"
     class="md:translate-x-0 fixed md:static inset-y-0 left-0 z-50 flex flex-col w-64 md:w-56 shrink-0
            min-h-screen md:min-h-[calc(100vh-64px)] border-r border-cream-200 bg-cream-50 md:bg-cream-50/40
-           px-3 py-6 transition-transform duration-200 ease-out">
+           px-3 py-6 transition-transform duration-200 ease-out overflow-y-auto">
 
     <div class="flex items-center justify-between mb-4 px-3">
         <p class="text-[11px] font-bold text-ink-700/45 leading-snug">

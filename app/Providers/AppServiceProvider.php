@@ -18,8 +18,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->environment('production')) {
-                      URL::forceScheme('https');
-                    }
+            URL::forceScheme('https');
+        }
+
         \Illuminate\Support\Carbon::setLocale('es');
 
         // El admin puede todo: se resuelve antes que cualquier gate concreto.
@@ -28,24 +29,20 @@ class AppServiceProvider extends ServiceProvider
         // Ver clasificación, puntos y niveles. El organizador reparte a ciegas.
         Gate::define('ver-puntuaciones', fn (User $user) => $user->puedeVerPuntuaciones());
 
-        // Montar jornadas y corregir emparejamientos.
+        // Montar jornadas, corregir emparejamientos y tocar los pesos del
+        // algoritmo: el organizador necesita ambas cosas para hacer su trabajo.
         Gate::define('gestionar-jornadas', fn (User $user) => $user->esOrganizador());
+        Gate::define('gestionar-ajustes', fn (User $user) => $user->esOrganizador());
 
-        // Alta/baja de jugadores del torneo, ajustes del algoritmo, usuarios
-        // y auditoría: solo admin (lo cubre el Gate::before de arriba).
+        // Alta/baja de jugadores del torneo, usuarios y auditoría: solo
+        // admin (lo cubre el Gate::before de arriba).
         Gate::define('gestionar-jugadores', fn (User $user) => false);
-        Gate::define('gestionar-ajustes', fn (User $user) => false);
         Gate::define('gestionar-usuarios', fn (User $user) => false);
         Gate::define('ver-auditoria', fn (User $user) => false);
 
-        // Registrar el resultado de un partido: organizador siempre; el
-        // jugador vinculado solo en los partidos que juega él.
-        Gate::define('registrar-resultado', function (User $user, Partido $partido) {
-            if ($user->esOrganizador()) {
-                return true;
-            }
-
-            return $user->juegaElPartido($partido);
-        });
+        // Registrar el resultado de un partido: solo admin y organizador.
+        // Los jugadores ya no anotan sus propios sets — demasiado fácil de
+        // manipular un resultado que a uno mismo le interesa.
+        Gate::define('registrar-resultado', fn (User $user, Partido $partido) => $user->esOrganizador());
     }
 }

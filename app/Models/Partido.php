@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 class Partido extends Model
 {
     protected $fillable = [
-        'jornada_id', 'pista', 'hora', 'sets_a', 'sets_b',
+        'jornada_id', 'pista', 'hora', 'sets_a', 'sets_b', 'detalle_sets',
         'retirado_id', 'super_tie_break', 'motivo_ia',
     ];
 
@@ -20,6 +20,7 @@ class Partido extends Model
         'pista'           => 'integer',
         'sets_a'          => 'integer',
         'sets_b'          => 'integer',
+        'detalle_sets'    => 'array',
         'super_tie_break' => 'boolean',
     ];
 
@@ -55,23 +56,32 @@ class Partido extends Model
     }
 
     /**
-     * Guarda el resultado y reparte puntos según las normas del torneo:
+     * Guarda el resultado a partir del marcador de cada set y reparte
+     * puntos según las normas del torneo:
      *   · 1 punto por set ganado, máximo 3 por jugador y partido.
      *   · Si alguien se retira: conserva los sets ya ganados, su compañero suma
      *     1 punto extra y la pareja rival se anota los 3 puntos.
      * Además, ajusta el nivel de los 4 jugadores al estilo Elo (ver
-     * App\Services\EloNiveles) — salvo que haya retirada, que no mueve nivel.
+     * App\Services\EloNiveles) usando el marcador de cada set, no solo
+     * quién ganó cuántos — salvo que haya retirada, que no mueve nivel.
+     *
+     * @param  array<int, array{a: int, b: int, tie_break?: bool}>  $detalleSets
      */
-    public function registrarResultado(int $setsA, int $setsB, ?int $retiradoId = null, bool $superTieBreak = false): void
+    public function registrarResultado(array $detalleSets, ?int $retiradoId = null): void
     {
         $max = (int) config('tenis.puntos_max_por_partido', 3);
 
-        DB::transaction(function () use ($setsA, $setsB, $retiradoId, $superTieBreak, $max) {
+        $setsA = collect($detalleSets)->filter(fn ($s) => $s['a'] > $s['b'])->count();
+        $setsB = collect($detalleSets)->filter(fn ($s) => $s['b'] > $s['a'])->count();
+        $tieBreak = collect($detalleSets)->contains(fn ($s) => $s['tie_break'] ?? false);
+
+        DB::transaction(function () use ($detalleSets, $setsA, $setsB, $tieBreak, $retiradoId, $max) {
             $this->update([
                 'sets_a'          => $setsA,
                 'sets_b'          => $setsB,
+                'detalle_sets'    => $detalleSets,
                 'retirado_id'     => $retiradoId,
-                'super_tie_break' => $superTieBreak,
+                'super_tie_break' => $tieBreak,
             ]);
 
             $this->load('jugadores');
@@ -106,7 +116,10 @@ class Partido extends Model
         DB::transaction(function () {
             app(EloNiveles::class)->revertir($this);
 
-            $this->update(['sets_a' => null, 'sets_b' => null, 'retirado_id' => null, 'super_tie_break' => false]);
+            $this->update([
+                'sets_a' => null, 'sets_b' => null, 'detalle_sets' => null,
+                'retirado_id' => null, 'super_tie_break' => false,
+            ]);
             DB::table('partido_jugador')->where('partido_id', $this->id)->update(['puntos' => 0]);
         });
     }

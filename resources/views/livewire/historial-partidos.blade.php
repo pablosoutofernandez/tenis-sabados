@@ -46,7 +46,16 @@
                                     <div class="flex-1 min-w-[220px] flex items-center gap-3">
                                         <span class="text-sm font-semibold text-ink-800">{{ $a->pluck('nombre')->join(' + ') }}</span>
                                         <span class="font-mono text-sm font-bold {{ $partido->jugado() ? 'text-ink-800' : 'text-ink-700/30' }}">
-                                            {{ $partido->jugado() ? $partido->sets_a.' – '.$partido->sets_b : '– –' }}
+                                            @if($partido->jugado())
+                                                {{ $partido->sets_a }} – {{ $partido->sets_b }}
+                                                @if($partido->detalle_sets)
+                                                    <span class="text-[10px] font-normal text-ink-700/45">
+                                                        ({{ collect($partido->detalle_sets)->map(fn ($s) => $s['a'].'-'.$s['b'])->join(' ') }})
+                                                    </span>
+                                                @endif
+                                            @else
+                                                – –
+                                            @endif
                                         </span>
                                         <span class="text-sm font-semibold text-ink-800">{{ $b->pluck('nombre')->join(' + ') }}</span>
                                     </div>
@@ -75,38 +84,82 @@
 
                                 {{-- Formulario de resultado --}}
                                 @if($editando === $partido->id)
-                                    <div class="mt-3 pt-3 border-t border-cream-200 flex flex-wrap items-end gap-4">
-                                        <div>
-                                            <label class="block text-[10px] font-bold text-ink-700/60 mb-1">Sets {{ $a->pluck('nombre')->join(' + ') }}</label>
-                                            <input type="number" min="0" max="5" wire:model="resultados.{{ $partido->id }}.sets_a"
-                                                   class="w-20 px-3 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                    <div class="mt-3 pt-3 border-t border-cream-200">
+
+                                        <p class="text-[10px] font-bold uppercase tracking-widest text-ink-700/45 mb-2">Sets</p>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                            @foreach([0 => 'Set 1', 1 => 'Set 2'] as $i => $etiqueta)
+                                                <div>
+                                                    <label class="block text-[10px] font-bold text-ink-700/60 mb-1">{{ $etiqueta }}</label>
+                                                    <div class="flex items-center gap-1.5">
+                                                        <input type="number" min="0" max="30"
+                                                               wire:model="resultados.{{ $partido->id }}.sets.{{ $i }}.a"
+                                                               placeholder="{{ $a->pluck('nombre')->join('+') }}"
+                                                               class="w-full min-w-0 px-2 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                                        <span class="text-ink-700/35 shrink-0">–</span>
+                                                        <input type="number" min="0" max="30"
+                                                               wire:model="resultados.{{ $partido->id }}.sets.{{ $i }}.b"
+                                                               placeholder="{{ $b->pluck('nombre')->join('+') }}"
+                                                               class="w-full min-w-0 px-2 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                                    </div>
+                                                    @error('resultados.'.$partido->id.'.sets.'.$i.'.a')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
+                                                    @error('resultados.'.$partido->id.'.sets.'.$i.'.b')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
+                                                </div>
+                                            @endforeach
                                         </div>
-                                        <div>
-                                            <label class="block text-[10px] font-bold text-ink-700/60 mb-1">Sets {{ $b->pluck('nombre')->join(' + ') }}</label>
-                                            <input type="number" min="0" max="5" wire:model="resultados.{{ $partido->id }}.sets_b"
-                                                   class="w-20 px-3 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
+
+                                        {{-- Aparte: el súper cuenta como un set más para los puntos, pero
+                                             pesa menos que un set normal a la hora de repartir nivel — un
+                                             formato corto y de más azar dice menos de quién jugó mejor. --}}
+                                        <div class="rounded-xl bg-ball-400/10 ring-1 ring-ball-400/20 p-3 mb-3">
+                                            <p class="text-[10px] font-bold uppercase tracking-widest text-ink-700/45 mb-2">
+                                                Súper tie-break — solo si hizo falta
+                                            </p>
+                                            <div class="max-w-[240px]">
+                                                <div class="flex items-center gap-1.5">
+                                                    <input type="number" min="0" max="30"
+                                                           wire:model="resultados.{{ $partido->id }}.sets.2.a"
+                                                           placeholder="{{ $a->pluck('nombre')->join('+') }}"
+                                                           class="w-full min-w-0 px-2 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                                    <span class="text-ink-700/35 shrink-0">–</span>
+                                                    <input type="number" min="0" max="30"
+                                                           wire:model="resultados.{{ $partido->id }}.sets.2.b"
+                                                           placeholder="{{ $b->pluck('nombre')->join('+') }}"
+                                                           class="w-full min-w-0 px-2 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                                </div>
+                                                @error('resultados.'.$partido->id.'.sets.2.a')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
+                                                @error('resultados.'.$partido->id.'.sets.2.b')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
+                                            </div>
+                                            <p class="text-[10px] text-ink-700/45 mt-2">
+                                                Déjalo en 0-0 si el partido acabó en dos sets. Cuenta como un set ganado
+                                                o perdido a efectos de puntos, igual que los de arriba — pero pesa
+                                                menos a la hora de calcular el nivel de cada uno.
+                                            </p>
                                         </div>
-                                        <div>
-                                            <label class="block text-[10px] font-bold text-ink-700/60 mb-1">¿Alguien se retiró?</label>
-                                            <select wire:model="resultados.{{ $partido->id }}.retirado_id"
-                                                    class="px-3 py-2 rounded-lg border border-cream-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
-                                                <option value="">Nadie</option>
-                                                @foreach($partido->jugadores as $j)
-                                                    <option value="{{ $j->id }}">{{ $j->nombre }}</option>
-                                                @endforeach
-                                            </select>
+
+                                        <div class="flex flex-wrap items-end gap-3">
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-ink-700/60 mb-1">¿Alguien se retiró?</label>
+                                                <select wire:model="resultados.{{ $partido->id }}.retirado_id"
+                                                        class="px-3 py-2 rounded-lg border border-cream-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                                    <option value="">Nadie</option>
+                                                    @foreach($partido->jugadores as $j)
+                                                        <option value="{{ $j->id }}">{{ $j->nombre }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <button wire:click="guardarResultado({{ $partido->id }})"
+                                                        class="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition">
+                                                    Guardar
+                                                </button>
+                                                <button wire:click="cerrar"
+                                                        class="px-4 py-2 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
+                                                    Cancelar
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div class="flex gap-2">
-                                            <button wire:click="guardarResultado({{ $partido->id }})"
-                                                    class="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition">
-                                                Guardar
-                                            </button>
-                                            <button wire:click="cerrar"
-                                                    class="px-4 py-2 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
-                                                Cancelar
-                                            </button>
-                                        </div>
-                                        <p class="w-full text-[11px] text-ink-700/50">
+                                        <p class="text-[11px] text-ink-700/50 mt-3">
                                             1 punto por set ganado, con tope de {{ config('tenis.puntos_max_por_partido') }} por jugador.
                                             Si alguien se retira, los rivales se llevan los {{ config('tenis.puntos_max_por_partido') }} puntos
                                             y su compañero suma 1 más.

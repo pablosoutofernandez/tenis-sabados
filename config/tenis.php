@@ -55,5 +55,16 @@ return [
         // Magnitud del ajuste por pareja ante la sorpresa máxima posible.
         // Se reparte a partes iguales entre los 2 compañeros.
         'k' => 1.0,
+        // Tope duro por partido, independiente de 'k' o 'divisor': nadie
+        // sube ni baja más de esto en un solo partido (y, como cada
+        // jugador solo juega un partido por jornada, es lo mismo que "en
+        // un día").
+        'tope_por_partido' => 0.5,
+        // El súper tie-break sigue contando como un set más a la hora de
+        // calcular quién dominó el partido, pero con menos peso que un
+        // set normal (formato corto, más variable) — no se ignora del
+        // todo, solo pesa menos. 1.0 = igual que un set normal, 0 = no
+        // cuenta nada.
+        'peso_super_tie_break' => 0.5,
     ],
 ];

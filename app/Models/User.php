@@ -83,14 +83,4 @@ class User extends Authenticatable
     {
         return self::ROLES[$this->rol] ?? $this->rol;
     }
-
-    /** ¿Juega este usuario ese partido? Usado para dejarle poner su resultado. */
-    public function juegaElPartido(Partido $partido): bool
-    {
-        if (! $this->jugador_id) {
-            return false;
-        }
-
-        return $partido->jugadores->contains('id', $this->jugador_id);
-    }
 }
