@@ -1,8 +1,9 @@
 @php
-    use Illuminate\Support\Facades\Route;
-
     $usuario = auth()->user();
 
+    // Cada enlace lleva el permiso que hace falta para verlo; los que no
+    // aplican al rol (o al visitante sin cuenta) ni se pintan. 'gate' a
+    // null significa "cualquier cuenta autenticada, sin permiso especial".
     $enlaces = collect([
         ['ruta' => 'clasificacion',     'texto' => 'Clasificación',      'icono' => '🎾', 'gate' => 'ver-puntuaciones', 'publico' => true],
         ['ruta' => 'jornada.generar',   'texto' => 'Montar jornada',     'icono' => '🗓️', 'gate' => 'gestionar-jornadas'],
@@ -13,11 +14,6 @@
         ['ruta' => 'usuarios',          'texto' => 'Usuarios',           'icono' => '🔑', 'gate' => 'gestionar-usuarios'],
         ['ruta' => 'auditoria',         'texto' => 'Actividad',          'icono' => '📜', 'gate' => 'ver-auditoria'],
     ])->filter(function ($e) use ($usuario) {
-        // Si la ruta no está registrada en web.php, la ignoramos para evitar el error 500
-        if (! Route::has($e['ruta'])) {
-            return false;
-        }
-
         if (! $usuario) {
             return $e['publico'] ?? false;
         }
@@ -40,7 +36,7 @@
     <div class="flex items-center justify-between mb-4 px-3">
         <p class="text-[11px] font-bold text-ink-700/45 leading-snug">
             Tenis Sábados<br>
-            <span class="text-ink-700/30">{{ config('tenis.temporada.ciudad', '') }} · dobles</span>
+            <span class="text-ink-700/30">{{ config('tenis.temporada.ciudad') }} · dobles</span>
         </p>
         <button @click="menuAbierto = false" aria-label="Cerrar menú"
                 class="md:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-cream-200 text-ink-700/60 shrink-0">
@@ -66,12 +62,10 @@
         @if($usuario)
             <p class="text-xs font-bold text-ink-800 truncate">{{ $usuario->name }}</p>
             <p class="text-[10px] text-ink-700/45 mb-2">
-                {{ $usuario->rol_nombre ?? '' }}@if(!empty($usuario->jugador)) · {{ $usuario->jugador->nombre }}@endif
+                {{ $usuario->rol_nombre }}@if($usuario->jugador) · {{ $usuario->jugador->nombre }}@endif
             </p>
-            @if(Route::has('password.cambiar'))
-                <a href="{{ route('password.cambiar') }}" wire:navigate @click="menuAbierto = false"
-                   class="block text-[11px] font-bold text-ink-700/55 hover:text-ink-800 transition">Cambiar contraseña</a>
-            @endif
+            <a href="{{ route('password.cambiar') }}" wire:navigate @click="menuAbierto = false"
+               class="block text-[11px] font-bold text-ink-700/55 hover:text-ink-800 transition">Cambiar contraseña</a>
             <form method="POST" action="{{ route('logout') }}" class="mt-1">
                 @csrf
                 <button type="submit" class="text-[11px] font-bold text-ink-700/55 hover:text-rose-300 transition">
@@ -82,10 +76,8 @@
             <p class="text-[10px] text-ink-700/45 mb-2 leading-relaxed">
                 Entra para anotar resultados o montar jornadas.
             </p>
-            @if(Route::has('login'))
-                <a href="{{ route('login') }}" wire:navigate
-                   class="block text-[11px] font-bold text-brand-300 hover:text-white transition">Entrar</a>
-            @endif
+            <a href="{{ route('login') }}" wire:navigate
+               class="block text-[11px] font-bold text-brand-300 hover:text-white transition">Entrar</a>
         @endif
     </div>
 </aside>

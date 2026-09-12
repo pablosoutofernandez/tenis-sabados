@@ -21,12 +21,12 @@
             Sábados Tenis
         </a>
 
-        @if(auth()->check() && auth()->user())
+        @auth
             <div class="flex items-center gap-3 ml-auto">
-                    <span class="text-xs text-ink-700/55 hidden sm:inline">
-                        {{ auth()->user()->name }}
-                        <span class="text-ink-700/35">· {{ auth()->user()->rol_nombre }}</span>
-                    </span>
+                <span class="text-xs text-ink-700/55 hidden sm:inline">
+                    {{ auth()->user()?->name }}
+                    <span class="text-ink-700/35">· {{ auth()->user()?->rol_nombre }}</span>
+                </span>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
                     <button type="submit"
@@ -40,7 +40,7 @@
                class="ml-auto px-3 py-1.5 rounded-lg bg-cream-200 hover:bg-cream-300 text-ink-800 text-xs font-bold transition">
                 Entrar
             </a>
-        @endif
+        @endauth
     </div>
 </header>
 
