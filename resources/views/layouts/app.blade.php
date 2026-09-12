@@ -20,7 +20,7 @@
                 <img src="/logo.svg" alt="" class="w-6 h-6 rounded-md" width="24" height="24">
                 Sábados Tenis
             </a>
-
+            @auth
                 <div class="flex items-center gap-3 ml-auto">
                     <span class="text-xs text-ink-700/55 hidden sm:inline">
                         {{ auth()->user()->name }}
@@ -34,7 +34,7 @@
                         </button>
                     </form>
                 </div>
-
+            @endauth
 
             @guest
                 <a href="{{ route('login') }}" wire:navigate
