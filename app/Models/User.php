@@ -76,7 +76,7 @@ class User extends Authenticatable
      */
     public function puedeVerPuntuaciones(): bool
     {
-        return ! $this->esOrganizador();
+        return true;
     }
 
     public function getRolNombreAttribute(): string

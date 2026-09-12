@@ -18,9 +18,9 @@ class HistorialPartidos extends Component
 
     /**
      * Resultados en edición:
-     * [partido_id => ['sets' => [['a'=>x,'b'=>y,'tie_break'=>bool], ...], 'retirado_id' => z]]
-     * Siempre 3 filas en el formulario; la tercera (el súper tie-break, si
-     * lo hubo) se deja vacía (0-0) si el partido acabó en 2 sets.
+     * [partido_id => ['sets' => [['a'=>x,'b'=>y], ...], 'retirado_id' => z]]
+     * 4 filas en el formulario: Set 1, Set 2, Set 3 y Súper Tie-Break.
+     * Solo el Set 1 es obligatorio. El Súper Tie-Break es siempre opcional.
      */
     public array $resultados = [];
 
@@ -32,14 +32,36 @@ class HistorialPartidos extends Component
 
         Gate::authorize('registrar-resultado', $partido);
 
-        $sets = $partido->detalle_sets ?: [];
-        while (count($sets) < 3) {
-            $sets[] = ['a' => 0, 'b' => 0, 'tie_break' => count($sets) === 2];
+        // Estructura fija de 4 filas para el formulario: Set 1, Set 2, Set 3 y Súper Tie-Break
+        $setsFormulario = [
+            ['a' => 0, 'b' => 0],
+            ['a' => 0, 'b' => 0],
+            ['a' => 0, 'b' => 0],
+            ['a' => 0, 'b' => 0, 'tie_break' => true],
+        ];
+
+        $detalleGuardado = $partido->detalle_sets ?: [];
+        $indexRegular = 0;
+
+        foreach ($detalleGuardado as $set) {
+            if (! empty($set['tie_break'])) {
+                $setsFormulario[3] = [
+                    'a'         => (int) ($set['a'] ?? 0),
+                    'b'         => (int) ($set['b'] ?? 0),
+                    'tie_break' => true,
+                ];
+            } elseif ($indexRegular < 3) {
+                $setsFormulario[$indexRegular] = [
+                    'a' => (int) ($set['a'] ?? 0),
+                    'b' => (int) ($set['b'] ?? 0),
+                ];
+                $indexRegular++;
+            }
         }
 
         $this->editando = $partidoId;
         $this->resultados[$partidoId] = [
-            'sets'        => $sets,
+            'sets'        => $setsFormulario,
             'retirado_id' => $partido->retirado_id,
         ];
     }
@@ -60,53 +82,53 @@ class HistorialPartidos extends Component
             return;
         }
 
-        // El select devuelve '' cuando no se retiró nadie.
         $datos['retirado_id'] = $datos['retirado_id'] !== '' ? $datos['retirado_id'] : null;
 
         $validado = validator($datos, [
-            'sets'                => ['required', 'array', 'size:3'],
-            'sets.0.a'            => ['required', 'integer', 'min:0', 'max:30'],
-            'sets.0.b'            => ['required', 'integer', 'min:0', 'max:30', 'different:sets.0.a'],
-            'sets.1.a'            => ['required', 'integer', 'min:0', 'max:30'],
-            'sets.1.b'            => ['required', 'integer', 'min:0', 'max:30', 'different:sets.1.a'],
-            'sets.2.a'            => ['nullable', 'integer', 'min:0', 'max:30'],
-            'sets.2.b'            => ['nullable', 'integer', 'min:0', 'max:30'],
-            'retirado_id'         => ['nullable', 'integer', 'exists:jugadores,id'],
+            'sets'        => ['required', 'array', 'size:4'],
+            'sets.0.a'    => ['required', 'integer', 'min:0', 'max:30'],
+            'sets.0.b'    => ['required', 'integer', 'min:0', 'max:30', 'different:sets.0.a'],
+            'sets.1.a'    => ['nullable', 'integer', 'min:0', 'max:30'],
+            'sets.1.b'    => ['nullable', 'integer', 'min:0', 'max:30'],
+            'sets.2.a'    => ['nullable', 'integer', 'min:0', 'max:30'],
+            'sets.2.b'    => ['nullable', 'integer', 'min:0', 'max:30'],
+            'sets.3.a'    => ['nullable', 'integer', 'min:0', 'max:30'],
+            'sets.3.b'    => ['nullable', 'integer', 'min:0', 'max:30'],
+            'retirado_id' => ['nullable', 'integer', 'exists:jugadores,id'],
         ], [
             'sets.0.b.different' => 'El set 1 no puede acabar en empate: alguien tiene que ganarlo.',
-            'sets.1.b.different' => 'El set 2 no puede acabar en empate: alguien tiene que ganarlo.',
         ])->validate();
 
-        // El set 3 solo cuenta si de verdad se jugó (algún juego/punto anotado).
-        $tercerSetJugado = (int) ($validado['sets'][2]['a'] ?? 0) !== 0
-            || (int) ($validado['sets'][2]['b'] ?? 0) !== 0;
+        // Función auxiliar para comprobar si un set se ha jugado (puntos anotados)
+        $esJugado = fn ($s) => ((int) ($s['a'] ?? 0)) > 0 || ((int) ($s['b'] ?? 0)) > 0;
 
-        if ($tercerSetJugado && (int) $validado['sets'][2]['a'] === (int) $validado['sets'][2]['b']) {
-            $this->addError('resultados.'.$partidoId.'.sets.2.b', 'El set 3 no puede acabar en empate: alguien tiene que ganarlo.');
+        // Comprobación de empates en sets jugados (Sets 2, 3 y Súper Tie-Break)
+        for ($i = 1; $i <= 3; $i++) {
+            if ($esJugado($validado['sets'][$i])) {
+                $a = (int) $validado['sets'][$i]['a'];
+                $b = (int) $validado['sets'][$i]['b'];
+                if ($a === $b) {
+                    $nombre = $i === 3 ? 'El Súper Tie-Break' : 'El set '.($i + 1);
+                    $this->addError('resultados.'.$partidoId.'.sets.'.$i.'.b', "{$nombre} no puede acabar en empate.");
 
-            return;
+                    return;
+                }
+            }
         }
 
-        // Si los dos primeros sets se los repartieron, hace falta un tercero.
-        $ganaA1 = $validado['sets'][0]['a'] > $validado['sets'][0]['b'];
-        $ganaA2 = $validado['sets'][1]['a'] > $validado['sets'][1]['b'];
-        if ($ganaA1 !== $ganaA2 && ! $tercerSetJugado) {
-            $this->addError('resultados.'.$partidoId.'.sets.2.a', 'Los dos primeros sets están repartidos: falta el resultado del tercero.');
-
-            return;
-        }
-
-        $detalleSets = [
-            ['a' => (int) $validado['sets'][0]['a'], 'b' => (int) $validado['sets'][0]['b']],
-            ['a' => (int) $validado['sets'][1]['a'], 'b' => (int) $validado['sets'][1]['b']],
-        ];
-
-        if ($tercerSetJugado) {
-            $detalleSets[] = [
-                'a'         => (int) $validado['sets'][2]['a'],
-                'b'         => (int) $validado['sets'][2]['b'],
-                'tie_break' => (bool) ($this->resultados[$partidoId]['sets'][2]['tie_break'] ?? true),
-            ];
+        // Construir el array final filtrando solo los sets disputados
+        $detalleSets = [];
+        for ($i = 0; $i < 4; $i++) {
+            if ($i === 0 || $esJugado($validado['sets'][$i])) {
+                $item = [
+                    'a' => (int) $validado['sets'][$i]['a'],
+                    'b' => (int) $validado['sets'][$i]['b'],
+                ];
+                if ($i === 3) {
+                    $item['tie_break'] = true;
+                }
+                $detalleSets[] = $item;
+            }
         }
 
         $eraNuevo = ! $partido->jugado();
@@ -121,10 +143,10 @@ class HistorialPartidos extends Component
         Auditoria::registrar(
             'resultado.guardado',
             ($eraNuevo ? 'Resultado anotado' : 'Resultado corregido').': '
-                .$partido->equipo('a')->pluck('nombre')->join(' + ').' '
-                .collect($detalleSets)->map(fn ($s) => $s['a'].'-'.$s['b'])->join(' ')
-                .' '.$partido->equipo('b')->pluck('nombre')->join(' + ')
-                .' (pista '.$partido->pista.', '.$partido->jornada->fecha->format('d/m/Y').').',
+            .$partido->equipo('a')->pluck('nombre')->join(' + ').' '
+            .collect($detalleSets)->map(fn ($s) => $s['a'].'-'.$s['b'])->join(' ')
+            .' '.$partido->equipo('b')->pluck('nombre')->join(' + ')
+            .' (pista '.$partido->pista.', '.$partido->jornada->fecha->format('d/m/Y').').',
             $partido->jornada_id,
         );
 

@@ -86,9 +86,9 @@
                                 @if($editando === $partido->id)
                                     <div class="mt-3 pt-3 border-t border-cream-200">
 
-                                        <p class="text-[10px] font-bold uppercase tracking-widest text-ink-700/45 mb-2">Sets</p>
-                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                                            @foreach([0 => 'Set 1', 1 => 'Set 2'] as $i => $etiqueta)
+                                        <p class="text-[10px] font-bold uppercase tracking-widest text-ink-700/45 mb-2">Sets regulares</p>
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                                            @foreach([0 => 'Set 1', 1 => 'Set 2', 2 => 'Set 3'] as $i => $etiqueta)
                                                 <div>
                                                     <label class="block text-[10px] font-bold text-ink-700/60 mb-1">{{ $etiqueta }}</label>
                                                     <div class="flex items-center gap-1.5">
@@ -108,32 +108,28 @@
                                             @endforeach
                                         </div>
 
-                                        {{-- Aparte: el súper cuenta como un set más para los puntos, pero
-                                             pesa menos que un set normal a la hora de repartir nivel — un
-                                             formato corto y de más azar dice menos de quién jugó mejor. --}}
+                                        {{-- Súper Tie-Break opcional (índice 3) --}}
                                         <div class="rounded-xl bg-ball-400/10 ring-1 ring-ball-400/20 p-3 mb-3">
                                             <p class="text-[10px] font-bold uppercase tracking-widest text-ink-700/45 mb-2">
-                                                Súper tie-break — solo si hizo falta
+                                                Súper tie-break — opcional
                                             </p>
                                             <div class="max-w-[240px]">
                                                 <div class="flex items-center gap-1.5">
                                                     <input type="number" min="0" max="30"
-                                                           wire:model="resultados.{{ $partido->id }}.sets.2.a"
+                                                           wire:model="resultados.{{ $partido->id }}.sets.3.a"
                                                            placeholder="{{ $a->pluck('nombre')->join('+') }}"
                                                            class="w-full min-w-0 px-2 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
                                                     <span class="text-ink-700/35 shrink-0">–</span>
                                                     <input type="number" min="0" max="30"
-                                                           wire:model="resultados.{{ $partido->id }}.sets.2.b"
+                                                           wire:model="resultados.{{ $partido->id }}.sets.3.b"
                                                            placeholder="{{ $b->pluck('nombre')->join('+') }}"
                                                            class="w-full min-w-0 px-2 py-2 rounded-lg border border-cream-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-300">
                                                 </div>
-                                                @error('resultados.'.$partido->id.'.sets.2.a')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
-                                                @error('resultados.'.$partido->id.'.sets.2.b')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
+                                                @error('resultados.'.$partido->id.'.sets.3.a')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
+                                                @error('resultados.'.$partido->id.'.sets.3.b')<p class="text-[10px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
                                             </div>
                                             <p class="text-[10px] text-ink-700/45 mt-2">
-                                                Déjalo en 0-0 si el partido acabó en dos sets. Cuenta como un set ganado
-                                                o perdido a efectos de puntos, igual que los de arriba — pero pesa
-                                                menos a la hora de calcular el nivel de cada uno.
+                                                Déjalo en 0-0 si no se disputó.
                                             </p>
                                         </div>
 
