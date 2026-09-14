@@ -199,7 +199,7 @@ class GenerarJornada extends Component
         }
 
         if ($partido->jugado()) {
-            $this->error = 'Este partido ya tiene resultado; borra el resultado en Historial antes de tocar las parejas.';
+            $this->error = 'Este partido ya tiene resultado; borra el resultado en Partidos antes de tocar las parejas.';
             return;
         }
 
