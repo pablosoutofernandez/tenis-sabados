@@ -10,23 +10,26 @@ class AjustesIA extends Model
 
     protected $fillable = [
         'prioridad_equilibrio',
-        'prioridad_no_repetir',
+        'prioridad_no_repetir_parejas',
+        'prioridad_no_repetir_rivales',
         'prioridad_frenar_lider',
     ];
 
     protected $casts = [
-        'prioridad_equilibrio'   => 'integer',
-        'prioridad_no_repetir'   => 'integer',
-        'prioridad_frenar_lider' => 'integer',
+        'prioridad_equilibrio'         => 'integer',
+        'prioridad_no_repetir_parejas' => 'integer',
+        'prioridad_no_repetir_rivales' => 'integer',
+        'prioridad_frenar_lider'       => 'integer',
     ];
 
     /** Siempre la misma fila (id 1); se crea sola con valores por defecto. */
     public static function actuales(): self
     {
         return static::firstOrCreate(['id' => 1], [
-            'prioridad_equilibrio'   => 3,
-            'prioridad_no_repetir'   => 3,
-            'prioridad_frenar_lider' => 3,
+            'prioridad_equilibrio'         => 3,
+            'prioridad_no_repetir_parejas' => 3,
+            'prioridad_no_repetir_rivales' => 3,
+            'prioridad_frenar_lider'       => 3,
         ]);
     }
 
@@ -41,14 +44,25 @@ class AjustesIA extends Model
         };
     }
 
-    public static function fraseVariedad(int $nivel): string
+    public static function fraseParejas(int $nivel): string
     {
         return match ($nivel) {
-            1 => 'casi no evita repetir',
-            2 => 'evita repetir un poco',
-            4 => 'evita repetir bastante',
-            5 => 'evita repetir a toda costa',
-            default => 'evita repetir lo normal',
+            1 => 'casi no evita repetir parejas',
+            2 => 'evita repetir parejas un poco',
+            4 => 'evita repetir parejas bastante',
+            5 => 'evita repetir parejas a toda costa',
+            default => 'evita repetir parejas lo normal',
+        };
+    }
+
+    public static function fraseRivales(int $nivel): string
+    {
+        return match ($nivel) {
+            1 => 'casi no mira los cruces',
+            2 => 'evita repetir rivales un poco',
+            4 => 'evita repetir rivales bastante',
+            5 => 'evita repetir rivales a toda costa',
+            default => 'evita repetir rivales lo normal',
         };
     }
 

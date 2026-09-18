@@ -1,0 +1,151 @@
+diff --git a/app/Livewire/GenerarJornada.php b/app/Livewire/GenerarJornada.php
+index 2f5d86a..13fa4a4 100644
+--- a/app/Livewire/GenerarJornada.php
++++ b/app/Livewire/GenerarJornada.php
+@@ -199,7 +199,7 @@ public function editarPartido(int $partidoId): void
+         }
+ 
+         if ($partido->jugado()) {
+-            $this->error = 'Este partido ya tiene resultado; borra el resultado en Historial antes de tocar las parejas.';
++            $this->error = 'Este partido ya tiene resultado; borra el resultado en Partidos antes de tocar las parejas.';
+             return;
+         }
+ 
+diff --git a/resources/views/layouts/app.blade.php b/resources/views/layouts/app.blade.php
+index 0f581c3..4c20400 100644
+--- a/resources/views/layouts/app.blade.php
++++ b/resources/views/layouts/app.blade.php
+@@ -15,7 +15,7 @@ class="md:hidden w-9 h-9 -ml-1.5 flex items-center justify-center rounded-lg hov
+             </svg>
+         </button>
+ 
+-        <a href="{{ auth()->check() ? route('inicio') : route('clasificacion') }}" wire:navigate
++        <a href="{{ route('inicio') }}" wire:navigate
+            class="flex items-center gap-2 h-display text-lg text-ink-800 flex-1 md:flex-none">
+             <img src="/logo.png" alt="" class="w-8 h-8 rounded-md" width="32" height="32">
+             Sábados Tenis
+diff --git a/resources/views/livewire/auth/cambiar-password.blade.php b/resources/views/livewire/auth/cambiar-password.blade.php
+index e69de29..bfa83bd 100644
+--- a/resources/views/livewire/auth/cambiar-password.blade.php
++++ b/resources/views/livewire/auth/cambiar-password.blade.php
+@@ -0,0 +1,55 @@
++<div class="w-full flex items-start">
++    {{-- Si la cuenta arrastra la contraseña inicial, el middleware devuelve aquí
++         desde cualquier otra pantalla: mejor no pintar un menú que no lleva
++         a ninguna parte hasta que la cambie. --}}
++    @unless(auth()->user()->debe_cambiar_password)
++        @include('partials.sidebar')
++    @endunless
++
++    <main class="flex-1 min-w-0 px-4 md:px-8 py-6 max-w-md">
++
++        <header class="mb-6">
++            <h1 class="h-display text-3xl text-ink-800">Cambiar contraseña</h1>
++            <p class="text-sm text-ink-700/70 mt-1">
++                Necesitas la actual para confirmar que eres tú.
++            </p>
++        </header>
++
++        @if(auth()->user()->debe_cambiar_password)
++            <div class="mb-4 px-4 py-3 rounded-xl bg-amber-500/10 text-amber-300 text-sm font-semibold ring-1 ring-amber-500/30">
++                Tu cuenta todavía usa la contraseña inicial. Cámbiala para poder seguir.
++            </div>
++        @endif
++
++        <div class="soft-card p-6">
++            <form wire:submit="guardar" class="space-y-4">
++                <div>
++                    <label class="block text-xs font-bold text-ink-700/70 mb-1.5">Contraseña actual</label>
++                    <input type="password" wire:model="actual" autocomplete="current-password" autofocus
++                           class="w-full px-4 py-2.5 rounded-xl border border-cream-300 bg-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
++                    @error('actual')<p class="text-[11px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
++                </div>
++
++                <div>
++                    <label class="block text-xs font-bold text-ink-700/70 mb-1.5">Contraseña nueva</label>
++                    <input type="password" wire:model="password" autocomplete="new-password"
++                           class="w-full px-4 py-2.5 rounded-xl border border-cream-300 bg-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
++                    @error('password')<p class="text-[11px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
++                </div>
++
++                <div>
++                    <label class="block text-xs font-bold text-ink-700/70 mb-1.5">Repite la nueva</label>
++                    <input type="password" wire:model="password_confirmation" autocomplete="new-password"
++                           class="w-full px-4 py-2.5 rounded-xl border border-cream-300 bg-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
++                    @error('password_confirmation')<p class="text-[11px] text-rose-400 font-medium mt-1">{{ $message }}</p>@enderror
++                </div>
++
++                <button type="submit"
++                        class="w-full px-5 py-2.5 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white text-sm font-bold shadow-soft hover:from-brand-500 hover:to-brand-700 transition">
++                    <span wire:loading.remove wire:target="guardar">Guardar contraseña</span>
++                    <span wire:loading wire:target="guardar">Guardando…</span>
++                </button>
++            </form>
++        </div>
++    </main>
++</div>
+diff --git a/resources/views/livewire/generar-jornada.blade.php b/resources/views/livewire/generar-jornada.blade.php
+index 92afbf8..9bb469e 100644
+--- a/resources/views/livewire/generar-jornada.blade.php
++++ b/resources/views/livewire/generar-jornada.blade.php
+@@ -222,7 +222,7 @@ class="px-3 py-1.5 rounded-lg bg-cream-100 hover:bg-cream-200 text-ink-800 text-
+             @endif
+ 
+             <p class="text-[11px] text-ink-700/45 mt-4">
+-                Los resultados se anotan en <a href="{{ route('historial') }}" wire:navigate class="font-bold text-brand-300">Historial</a>.
++                Los resultados se anotan en <a href="{{ route('historial') }}" wire:navigate class="font-bold text-brand-300">Partidos</a>.
+             </p>
+         @endif
+     </main>
+diff --git a/resources/views/livewire/historial-partidos.blade.php b/resources/views/livewire/historial-partidos.blade.php
+index ef6107c..cd404fd 100644
+--- a/resources/views/livewire/historial-partidos.blade.php
++++ b/resources/views/livewire/historial-partidos.blade.php
+@@ -4,7 +4,7 @@
+     <main class="flex-1 min-w-0 px-4 md:px-8 py-6 max-w-5xl">
+ 
+         <header class="mb-6">
+-            <h1 class="h-display text-3xl text-ink-800">Historial</h1>
++            <h1 class="h-display text-3xl text-ink-800">Partidos</h1>
+             <p class="text-sm text-ink-700/70 mt-1">
+                 Cada sábado jugado, con sus parejas y sets. Es lo que usa el algoritmo para no repetir
+                 emparejamientos, y lo que mueve el nivel de cada jugador tras cada resultado.
+@@ -26,8 +26,12 @@
+                             <span class="px-2 py-0.5 rounded-md {{ $jornada->estaCompleta() ? 'bg-emerald-500/10 text-emerald-300' : 'bg-cream-100 text-ink-700/60' }}">
+                                 {{ $jornada->estaCompleta() ? 'Resultados completos' : 'Faltan resultados' }}
+                             </span>
+-                            <a href="{{ route('jornada.ver', $jornada->id) }}" wire:navigate
+-                               class="text-brand-300 hover:text-white">Ver emparejamientos</a>
++                            {{-- Esa pantalla exige 'gestionar-jornadas' al entrar: si el usuario
++                                 no lo tiene, el enlace solo le llevaría a un 403. --}}
++                            @can('gestionar-jornadas')
++                                <a href="{{ route('jornada.ver', $jornada->id) }}" wire:navigate
++                                   class="text-brand-300 hover:text-white">Ver emparejamientos</a>
++                            @endcan
+                         </div>
+                     </div>
+ 
+diff --git a/routes/web.php b/routes/web.php
+index d878f11..117e53b 100644
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -7,16 +7,9 @@
+ // La clasificación se puede consultar sin cuenta: es el tablón del torneo.
+ Route::get('/clasificacion', \App\Livewire\Clasificacion::class)->name('clasificacion');
+ Route::get('/historial', \App\Livewire\HistorialPartidos::class)->name('historial');
+-Route::get('/', function () {
+-    if (! Auth::check()) {
+-        return redirect()->route('clasificacion');
+-    }
+-
+-
+-    // A cada rol le lleva a lo primero que sí puede ver: el organizador no
+-    // tiene acceso a la clasificación, así que entra directo a montar jornada.
+-    return redirect()->route(Auth::user()->puedeVerPuntuaciones() ? 'clasificacion' : 'jornada.generar');
+-})->name('inicio');
++// La portada es Partidos (la ruta sigue siendo /historial): es pública y la
++// ve cualquier rol, así que sirve de aterrizaje tanto con cuenta como sin ella.
++Route::get('/', fn () => redirect()->route('historial'))->name('inicio');
+ 
+ // ── Invitados ───────────────────────────────────────────────────────────
+ Route::middleware('guest')->group(function () {

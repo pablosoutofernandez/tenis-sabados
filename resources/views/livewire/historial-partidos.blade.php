@@ -4,7 +4,7 @@
     <main class="flex-1 min-w-0 px-4 md:px-8 py-6 max-w-5xl">
 
         <header class="mb-6">
-            <h1 class="h-display text-3xl text-ink-800">Historial</h1>
+            <h1 class="h-display text-3xl text-ink-800">Partidos</h1>
             <p class="text-sm text-ink-700/70 mt-1">
                 Cada sábado jugado, con sus parejas y sets. Es lo que usa el algoritmo para no repetir
                 emparejamientos, y lo que mueve el nivel de cada jugador tras cada resultado.
@@ -26,8 +26,12 @@
                             <span class="px-2 py-0.5 rounded-md {{ $jornada->estaCompleta() ? 'bg-emerald-500/10 text-emerald-300' : 'bg-cream-100 text-ink-700/60' }}">
                                 {{ $jornada->estaCompleta() ? 'Resultados completos' : 'Faltan resultados' }}
                             </span>
-                            <a href="{{ route('jornada.ver', $jornada->id) }}" wire:navigate
-                               class="text-brand-300 hover:text-white">Ver emparejamientos</a>
+                            {{-- Esa pantalla exige 'gestionar-jornadas' al entrar: si el usuario
+                                 no lo tiene, el enlace solo le llevaría a un 403. --}}
+                            @can('gestionar-jornadas')
+                                <a href="{{ route('jornada.ver', $jornada->id) }}" wire:navigate
+                                   class="text-brand-300 hover:text-white">Ver emparejamientos</a>
+                            @endcan
                         </div>
                     </div>
 

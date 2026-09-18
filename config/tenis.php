@@ -30,9 +30,14 @@ return [
     // esto, se avisa al organizador aunque la IA no haya roto ninguna norma.
     'aviso_desequilibrio_nivel' => 3,
 
+    // Cada una la estira o la encoge su propio ajuste de la app ("No repetir
+    // parejas" / "No repetir rivales"). La de rivales es más corta a
+    // propósito: cada pista crea 4 cruces y solo 2 parejas, así que con la
+    // misma ventana se vetarían el doble de dúos y no quedaría margen.
     'no_repetir' => [
         'partidos_ultimas_jornadas' => 4,   // mismo cuarteto enfrentado
         'parejas_ultimas_jornadas'  => 4,   // misma pareja jugando junta
+        'rivales_ultimas_jornadas'  => 3,   // mismos dos jugadores enfrentados
     ],
 
     // Normas del torneo que se le pasan a la IA.

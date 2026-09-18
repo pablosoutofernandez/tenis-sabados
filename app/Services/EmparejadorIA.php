@@ -23,10 +23,11 @@ use RuntimeException;
  * esperar: se quedaba con la combinación más "obvia" en vez de explorar
  * alternativas, y llegaba a decir que una repetición era inevitable cuando
  * no lo era. Así que la asignación la calcula un algoritmo determinista
- * aquí mismo (calcularAsignacion, más abajo): prueba muchas particiones al
- * azar, puntúa cada una según las mismas reglas de siempre (no repetir,
- * equilibrio, nivel_efectivo del líder) y se queda con la mejor — y si hay
- * varias igual de buenas, elige entre ellas al azar, para no repetir
+ * aquí mismo (calcularAsignacion, más abajo): recorre todos los repartos
+ * posibles de los convocados en pistas de 4, puntúa cada uno según las
+ * mismas reglas de siempre (no repetir parejas, no repetir rivales,
+ * equilibrio, nivel_efectivo del líder) y se queda con el mejor — y si hay
+ * varios igual de buenos, elige entre ellos al azar, para no repetir
  * siempre la misma "solución obvia".
  *
  * El nivel de cada jugador ya no lo revisa una IA tampoco: se ajusta solo
@@ -110,11 +111,13 @@ class EmparejadorIA
         $anio    ??= (int) now()->year;
         $ajustes   = AjustesIA::actuales();
 
-        [$ventanaParejas, $ventanaPartidos] = $this->ventanas($ajustes);
+        $ventanas = $this->ventanas($ajustes);
 
-        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanaParejas))
+        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanas['parejas']))
             ->keyBy(fn ($p) => implode('-', $p['ids']));
-        $partidosVetados = collect($this->historial->partidosRecientes($ventanaPartidos))
+        $rivalesVetados  = collect($this->historial->rivalesRecientes($ventanas['rivales']))
+            ->keyBy(fn ($p) => implode('-', $p['ids']));
+        $partidosVetados = collect($this->historial->partidosRecientes($ventanas['partidos']))
             ->keyBy(fn ($p) => implode('-', $p['ids']));
 
         $avisos = [];
@@ -133,6 +136,25 @@ class EmparejadorIA
                 if ($repetida = $parejasVetadas->get(implode('-', $pareja))) {
                     $avisos[] = 'La pareja '.$repetida['nombres'].' ya jugó junta el '.$repetida['fecha'].'.';
                 }
+            }
+
+            // Los cruces repetidos se agrupan en una sola línea por pista:
+            // hay 4 por partido y en lista suelta inundarían el aviso.
+            $cruces = [];
+
+            foreach ($datos['equipo_a'] as $uno) {
+                foreach ($datos['equipo_b'] as $otro) {
+                    $clave = collect([(int) $uno, (int) $otro])->sort()->values()->implode('-');
+
+                    if ($repetido = $rivalesVetados->get($clave)) {
+                        $cruces[] = $repetido['nombres'].' (el '.$repetido['fecha'].')';
+                    }
+                }
+            }
+
+            if ($cruces) {
+                $avisos[] = 'Pista '.($datos['pista'] ?? '?').': cruces que ya se dieron hace poco: '
+                    .implode(', ', $cruces).'.';
             }
         }
 
@@ -200,11 +222,13 @@ class EmparejadorIA
         $convocados = $ordenados->slice(0, $enJuego)->values()->all();
         $noJuegan   = $ordenados->slice($enJuego)->values()->all();
 
-        [$ventanaParejas, $ventanaPartidos] = $this->ventanas($ajustes);
+        $ventanas = $this->ventanas($ajustes);
 
-        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanaParejas))
+        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanas['parejas']))
             ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
-        $partidosVetados = collect($this->historial->partidosRecientes($ventanaPartidos))
+        $rivalesVetados  = collect($this->historial->rivalesRecientes($ventanas['rivales']))
+            ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
+        $partidosVetados = collect($this->historial->partidosRecientes($ventanas['partidos']))
             ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
 
         [$companeros, $rivales] = $this->historial->coincidenciasCrudas($anio);
@@ -214,21 +238,29 @@ class EmparejadorIA
         $pesoRival      = $this->pesoRival($ajustes);
         $pesoEquilibrio = $this->pesoEquilibrio($ajustes);
 
-        $intentos   = (int) min(3000, max(400, count($convocados) * 150));
-        $resultados = [];
+        // El coste de un cuarteto no depende de en qué pista caiga ni de lo
+        // que pase en las otras, así que se calcula una sola vez por
+        // cuarteto y se reutiliza: con 12 convocados hay 495 cuartetos
+        // posibles frente a 5.775 repartos, y sin esta caché cada cuarteto
+        // se recalcularía decenas de veces.
+        $cacheCuartetos = [];
 
-        for ($i = 0; $i < $intentos; $i++) {
-            $barajado  = collect($convocados)->shuffle()->values()->all();
-            $particion = array_chunk($barajado, $porPista);
+        $mejorCoste = INF;
+        $candidatos = [];
 
+        foreach ($this->repartosPosibles($convocados, $porPista) as $particion) {
             $costeTotal = 0.0;
             $pistasCalculadas = [];
 
             foreach ($particion as $indicePista => $cuarteto) {
-                [$equipoA, $equipoB, $coste] = $this->mejorSplitDeCuarteto(
-                    $cuarteto, $niveles, $parejasVetadas, $partidosVetados, $companeros, $rivales,
-                    $pesoPareja, $pesoRival, $pesoEquilibrio,
+                $clave = $this->clave($cuarteto);
+
+                $cacheCuartetos[$clave] ??= $this->mejorSplitDeCuarteto(
+                    $cuarteto, $niveles, $parejasVetadas, $rivalesVetados, $partidosVetados,
+                    $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
                 );
+
+                [$equipoA, $equipoB, $coste] = $cacheCuartetos[$clave];
 
                 $costeTotal += $coste;
                 $pistasCalculadas[] = [
@@ -238,14 +270,152 @@ class EmparejadorIA
                 ];
             }
 
-            $resultados[] = ['coste' => $costeTotal, 'pistas' => $pistasCalculadas];
+            // Se guardan todos los repartos que empatan de verdad con el
+            // mejor visto hasta ahora, y al final se elige entre ellos al
+            // azar; cuando aparece uno mejor, los que se quedan lejos se
+            // descartan para no ir acumulando miles en memoria.
+            if ($costeTotal < $mejorCoste) {
+                $mejorCoste = $costeTotal;
+                $candidatos = array_values(array_filter(
+                    $candidatos,
+                    fn ($c) => $c['coste'] <= $mejorCoste + 0.5,
+                ));
+            }
+
+            if ($costeTotal <= $mejorCoste + 0.5) {
+                $candidatos[] = ['coste' => $costeTotal, 'pistas' => $pistasCalculadas];
+            }
         }
 
-        $mejorCoste = collect($resultados)->min('coste');
-        $candidatos = collect($resultados)->filter(fn ($r) => $r['coste'] <= $mejorCoste + 0.5)->values()->all();
-        $elegido    = $candidatos[array_rand($candidatos)];
+        $elegido = $candidatos[array_rand($candidatos)];
 
         return ['partidos' => $elegido['pistas'], 'no_juegan' => $noJuegan];
+    }
+
+    /**
+     * Los repartos de los convocados en pistas de 4 que hay que puntuar.
+     *
+     * Con 2 o 3 pistas (lo que permite el torneo) salen como mucho 5.775
+     * repartos distintos, así que se recorren TODOS y el mejor es el mejor
+     * de verdad. Antes se probaban unos miles al azar, que con un solo
+     * objetivo bastaba; ahora que parejas y rivales compiten entre sí, la
+     * mejor combinación suele ser una concreta y el muestreo se la dejaba
+     * por el camino más veces de la cuenta.
+     *
+     * Si algún día se sube pistas_max y la cuenta se dispara, vuelve solo
+     * al muestreo al azar de siempre.
+     *
+     * @param  array<int>  $convocados
+     * @return iterable<int, array<int, array<int>>>
+     */
+    private function repartosPosibles(array $convocados, int $porPista): iterable
+    {
+        if ($this->cuantosRepartos(count($convocados), $porPista) <= 50000) {
+            return $this->todosLosRepartos($convocados, $porPista);
+        }
+
+        return $this->repartosAlAzar($convocados, $porPista, (int) min(3000, max(400, count($convocados) * 150)));
+    }
+
+    /** Cuántos repartos distintos salen, para decidir si caben todos. */
+    private function cuantosRepartos(int $convocados, int $porPista): float
+    {
+        $total = 1.0;
+
+        for ($quedan = $convocados; $quedan > 0; $quedan -= $porPista) {
+            // Fijado el primero que queda, sus compañeros de pista salen de
+            // entre los demás; así cada reparto se cuenta una sola vez.
+            $total *= $this->combinatorio($quedan - 1, $porPista - 1);
+
+            if ($total > 1e9) {
+                return $total;
+            }
+        }
+
+        return $total;
+    }
+
+    private function combinatorio(int $de, int $tomando): float
+    {
+        $total = 1.0;
+
+        for ($i = 0; $i < $tomando; $i++) {
+            $total = $total * ($de - $i) / ($i + 1);
+        }
+
+        return $total;
+    }
+
+    /**
+     * Todos los repartos posibles, sin repetir el mismo con las pistas en
+     * otro orden: se fija el primer jugador que queda, se le buscan 3
+     * compañeros y se sigue con el resto.
+     *
+     * @return \Generator<int, array<int, array<int>>>
+     */
+    private function todosLosRepartos(array $jugadores, int $porPista): \Generator
+    {
+        if ($jugadores === []) {
+            yield [];
+
+            return;
+        }
+
+        $primero = array_shift($jugadores);
+
+        foreach ($this->combinaciones($jugadores, $porPista - 1) as [$acompanantes, $resto]) {
+            foreach ($this->todosLosRepartos($resto, $porPista) as $siguientes) {
+                yield [[$primero, ...$acompanantes], ...$siguientes];
+            }
+        }
+    }
+
+    /**
+     * Cada forma de elegir $cuantos de la lista, junto con lo que sobra.
+     *
+     * @return \Generator<int, array{0: array<int>, 1: array<int>}>
+     */
+    private function combinaciones(array $jugadores, int $cuantos): \Generator
+    {
+        if ($cuantos === 0) {
+            yield [[], $jugadores];
+
+            return;
+        }
+
+        $total = count($jugadores);
+
+        for ($i = 0; $i <= $total - $cuantos; $i++) {
+            $elegido   = $jugadores[$i];
+            $siguientes = array_slice($jugadores, $i + 1);
+            $saltados   = array_slice($jugadores, 0, $i);
+
+            foreach ($this->combinaciones($siguientes, $cuantos - 1) as [$grupo, $sobrantes]) {
+                yield [[$elegido, ...$grupo], [...$saltados, ...$sobrantes]];
+            }
+        }
+    }
+
+    /**
+     * Red de seguridad para cuando hay demasiados repartos: el muestreo al
+     * azar de toda la vida.
+     *
+     * @return \Generator<int, array<int, array<int>>>
+     */
+    private function repartosAlAzar(array $jugadores, int $porPista, int $intentos): \Generator
+    {
+        for ($i = 0; $i < $intentos; $i++) {
+            yield array_chunk(collect($jugadores)->shuffle()->values()->all(), $porPista);
+        }
+    }
+
+    /** Clave estable de un grupo de jugadores, para cachés y vetos. */
+    private function clave(array $jugadorIds): string
+    {
+        $ids = array_map('intval', $jugadorIds);
+        sort($ids);
+
+        return implode('-', $ids);
     }
 
     /** De los 3 repartos posibles de 4 en 2v2, el de menor coste. */
@@ -253,6 +423,7 @@ class EmparejadorIA
         array $cuarteto,
         array $niveles,
         array $parejasVetadas,
+        array $rivalesVetados,
         array $partidosVetados,
         array $companeros,
         array $rivales,
@@ -268,22 +439,29 @@ class EmparejadorIA
             [[$a, $d], [$b, $c]],
         ];
 
-        $mejor      = null;
+        $mejores    = [];
         $mejorCoste = INF;
 
         foreach ($opciones as [$equipoA, $equipoB]) {
             $coste = $this->costePista(
-                $cuarteto, $equipoA, $equipoB, $niveles, $parejasVetadas, $partidosVetados,
-                $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
+                $cuarteto, $equipoA, $equipoB, $niveles, $parejasVetadas, $rivalesVetados,
+                $partidosVetados, $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
             );
 
-            if ($coste < $mejorCoste) {
+            // Si dos formas de partir el cuarteto valen lo mismo, se guardan
+            // las dos y luego se echa a suertes, igual que con los repartos.
+            if ($coste < $mejorCoste - 0.001) {
                 $mejorCoste = $coste;
-                $mejor = [$equipoA, $equipoB];
+                $mejores    = [[$equipoA, $equipoB]];
+            } elseif ($coste <= $mejorCoste + 0.001) {
+                $mejorCoste = min($mejorCoste, $coste);
+                $mejores[]  = [$equipoA, $equipoB];
             }
         }
 
-        return [$mejor[0], $mejor[1], $mejorCoste];
+        [$equipoA, $equipoB] = $mejores[array_rand($mejores)];
+
+        return [$equipoA, $equipoB, $mejorCoste];
     }
 
     /**
@@ -304,6 +482,7 @@ class EmparejadorIA
         array $equipoB,
         array $niveles,
         array $parejasVetadas,
+        array $rivalesVetados,
         array $partidosVetados,
         array $companeros,
         array $rivales,
@@ -313,14 +492,12 @@ class EmparejadorIA
     ): float {
         $coste = 0.0;
 
-        $claveCuarteto = collect($cuarteto)->sort()->values()->implode('-');
-        if (isset($partidosVetados[$claveCuarteto])) {
+        if (isset($partidosVetados[$this->clave($cuarteto)])) {
             $coste += 60.0;
         }
 
         foreach ([$equipoA, $equipoB] as $pareja) {
-            $clave = collect($pareja)->sort()->values()->implode('-');
-            if (isset($parejasVetadas[$clave])) {
+            if (isset($parejasVetadas[$this->clave($pareja)])) {
                 $coste += 40.0;
             }
         }
@@ -330,6 +507,14 @@ class EmparejadorIA
 
         foreach ($equipoA as $x) {
             foreach ($equipoB as $y) {
+                // Veto al cruce reciente: es el hermano pequeño del de
+                // parejas (18 frente a 40), así que sigue saliendo más
+                // barato repetir un par de cruces que una sola pareja,
+                // pero ya no sale gratis como antes.
+                if (isset($rivalesVetados[$this->clave([$x, $y])])) {
+                    $coste += 18.0;
+                }
+
                 $coste += $pesoRival * (int) ($rivales[$x][$y] ?? 0);
             }
         }
@@ -370,9 +555,9 @@ class EmparejadorIA
             ->unique()->values()->all();
 
         $niveles = $this->nivelesEfectivos($idsQueJuegan, $anio, $ajustes);
-        [$companeros] = $this->historial->coincidenciasCrudas($anio);
+        [$companeros, $rivales] = $this->historial->coincidenciasCrudas($anio);
 
-        $partidos = collect($asignacion['partidos'])->map(function (array $p) use ($niveles, $companeros) {
+        $partidos = collect($asignacion['partidos'])->map(function (array $p) use ($niveles, $companeros, $rivales) {
             $sumaA = round((float) ($niveles[$p['equipo_a'][0]] ?? 0) + (float) ($niveles[$p['equipo_a'][1]] ?? 0), 1);
             $sumaB = round((float) ($niveles[$p['equipo_b'][0]] ?? 0) + (float) ($niveles[$p['equipo_b'][1]] ?? 0), 1);
             $diferencia = round(abs($sumaA - $sumaB), 1);
@@ -391,13 +576,23 @@ class EmparejadorIA
                 $frase .= ' Las dos parejas son inéditas esta temporada.';
             }
 
+            $crucesNuevos = collect($p['equipo_a'])->every(
+                fn ($uno) => collect($p['equipo_b'])->every(
+                    fn ($otro) => (int) ($rivales[$uno][$otro] ?? 0) === 0,
+                ),
+            );
+
+            if ($crucesNuevos) {
+                $frase .= ' Ninguno de los cuatro se había enfrentado antes esta temporada.';
+            }
+
             $p['motivo'] = $frase;
 
             return $p;
         })->all();
 
-        $explicacion = 'Repartidos '.count($partidos).' pistas priorizando variedad (parejas y'
-            .' cruces poco repetidos esta temporada) y equilibrio de nivel dentro de cada pista.';
+        $explicacion = 'Repartidos '.count($partidos).' pistas evitando repetir parejas y,'
+            .' aparte, repetir rivales, y cuadrando el nivel dentro de cada pista.';
 
         return [
             'no_juegan'   => $asignacion['no_juegan'],
@@ -409,36 +604,43 @@ class EmparejadorIA
     // ── Prioridades del organizador (Ajustes IA) ────────────────────────────
 
     /**
-     * La ventana base de "no repetir" (config/tenis.php) se ensancha o se
-     * estrecha según la prioridad que le des a evitar repeticiones. En el
-     * nivel máximo no es "mirar un poco más atrás": es repasar toda la
-     * temporada jugada hasta ahora, así que la ventana cubre todas las
-     * jornadas que existan.
+     * Cuántas jornadas atrás mira cada veto. La ventana base
+     * (config/tenis.php) se ensancha o se estrecha según su ajuste, y cada
+     * tipo de repetición tiene ya el suyo propio: se pueden apretar los
+     * cruces sin tocar las parejas. En el nivel máximo no es "mirar un poco
+     * más atrás": es repasar toda la temporada jugada hasta ahora.
      *
-     * @return array{0: int, 1: int} [ventana parejas, ventana partidos]
+     * La del cuarteto completo va con el más alto de los dos, porque repetir
+     * un partido entero es a la vez repetir parejas y repetir cruces.
+     *
+     * @return array{parejas: int, rivales: int, partidos: int}
      */
     private function ventanas(AjustesIA $ajustes): array
     {
-        $parejas  = (int) config('tenis.no_repetir.parejas_ultimas_jornadas', 4);
-        $partidos = (int) config('tenis.no_repetir.partidos_ultimas_jornadas', 4);
+        $parejas = $ajustes->prioridad_no_repetir_parejas;
+        $rivales = $ajustes->prioridad_no_repetir_rivales;
 
-        if ($ajustes->prioridad_no_repetir >= 5) {
-            $todas = max(1, Jornada::count());
+        return [
+            'parejas'  => $this->ventana((int) config('tenis.no_repetir.parejas_ultimas_jornadas', 4), $parejas),
+            'rivales'  => $this->ventana((int) config('tenis.no_repetir.rivales_ultimas_jornadas', 2), $rivales),
+            'partidos' => $this->ventana((int) config('tenis.no_repetir.partidos_ultimas_jornadas', 4), max($parejas, $rivales)),
+        ];
+    }
 
-            return [$todas, $todas];
+    private function ventana(int $base, int $prioridad): int
+    {
+        if ($prioridad >= 5) {
+            return max(1, Jornada::count());
         }
 
-        $factor = match ($ajustes->prioridad_no_repetir) {
+        $factor = match ($prioridad) {
             1 => 0.5,
             2 => 0.75,
             4 => 1.5,
             default => 1.0,
         };
 
-        return [
-            max(1, (int) round($parejas * $factor)),
-            max(1, (int) round($partidos * $factor)),
-        ];
+        return max(1, (int) round($base * $factor));
     }
 
     /** A más prioridad de equilibrio, más bajo el umbral que dispara el aviso. */
@@ -467,7 +669,7 @@ class EmparejadorIA
      */
     private function pesoPareja(AjustesIA $ajustes): float
     {
-        return match ($ajustes->prioridad_no_repetir) {
+        return match ($ajustes->prioridad_no_repetir_parejas) {
             1 => 0.3,
             2 => 1.0,
             4 => 6.0,
@@ -476,15 +678,21 @@ class EmparejadorIA
         };
     }
 
-    /** Igual que pesoPareja(), pero para haber sido solo rivales (pesa menos). */
+    /**
+     * Igual que pesoPareja(), pero para haberse enfrentado. Sigue pesando
+     * menos que repetir pareja a igualdad de ajuste (1,4 frente a 2,0 en el
+     * nivel normal), que es como debe ser, pero es el doble de lo que pesaba
+     * antes: con la escala vieja los cruces no llegaban a competir nunca con
+     * el equilibrio y acababan repitiéndose solos.
+     */
     private function pesoRival(AjustesIA $ajustes): float
     {
-        return match ($ajustes->prioridad_no_repetir) {
-            1 => 0.1,
-            2 => 0.3,
-            4 => 2.0,
-            5 => 5.0,
-            default => 0.7,
+        return match ($ajustes->prioridad_no_repetir_rivales) {
+            1 => 0.2,
+            2 => 0.6,
+            4 => 3.5,
+            5 => 8.0,
+            default => 1.4,
         };
     }
 

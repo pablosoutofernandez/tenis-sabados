@@ -15,7 +15,7 @@
             </svg>
         </button>
 
-        <a href="{{ auth()->check() ? route('inicio') : route('clasificacion') }}" wire:navigate
+        <a href="{{ route('inicio') }}" wire:navigate
            class="flex items-center gap-2 h-display text-lg text-ink-800 flex-1 md:flex-none">
             <img src="/logo.png" alt="" class="w-8 h-8 rounded-md" width="32" height="32">
             Sábados Tenis

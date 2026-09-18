@@ -46,6 +46,48 @@ class HistorialTenis
     }
 
     /**
+     * Cruces (jugador contra jugador, uno en cada pareja) de las últimas N
+     * jornadas. El equivalente de parejasRecientes() para los rivales.
+     *
+     * Ojo con la ventana: cada pista genera 4 cruces y solo 2 parejas, así
+     * que mirar atrás el mismo número de jornadas veta el doble de dúos.
+     * Por eso la ventana base de rivales (config/tenis.php) es más corta.
+     *
+     * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>
+     */
+    public function rivalesRecientes(?int $jornadas = null): array
+    {
+        $jornadas ??= (int) config('tenis.no_repetir.rivales_ultimas_jornadas', 2);
+        $vistos = [];
+
+        foreach ($this->ultimasJornadasConPartidos($jornadas) as $jornada) {
+            foreach ($jornada->partidos as $partido) {
+                $a = $partido->equipo('a');
+                $b = $partido->equipo('b');
+
+                if ($a->count() !== 2 || $b->count() !== 2) {
+                    continue;
+                }
+
+                foreach ($a as $uno) {
+                    foreach ($b as $otro) {
+                        $ids   = collect([$uno->id, $otro->id])->sort()->values()->all();
+                        $clave = implode('-', $ids);
+
+                        $vistos[$clave] ??= [
+                            'ids'     => $ids,
+                            'nombres' => $uno->nombre.' vs '.$otro->nombre,
+                            'fecha'   => $jornada->fecha->toDateString(),
+                        ];
+                    }
+                }
+            }
+        }
+
+        return array_values($vistos);
+    }
+
+    /**
      * Enfrentamientos (los mismos 4 jugadores en una pista) de las últimas N jornadas.
      *
      * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>

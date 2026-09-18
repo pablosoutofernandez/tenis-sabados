@@ -1,0 +1,877 @@
+--- a/app/Services/EmparejadorIA.php
++++ b/app/Services/EmparejadorIA.php
+@@ -23,10 +23,11 @@
+  * esperar: se quedaba con la combinación más "obvia" en vez de explorar
+  * alternativas, y llegaba a decir que una repetición era inevitable cuando
+  * no lo era. Así que la asignación la calcula un algoritmo determinista
+- * aquí mismo (calcularAsignacion, más abajo): prueba muchas particiones al
+- * azar, puntúa cada una según las mismas reglas de siempre (no repetir,
+- * equilibrio, nivel_efectivo del líder) y se queda con la mejor — y si hay
+- * varias igual de buenas, elige entre ellas al azar, para no repetir
++ * aquí mismo (calcularAsignacion, más abajo): recorre todos los repartos
++ * posibles de los convocados en pistas de 4, puntúa cada uno según las
++ * mismas reglas de siempre (no repetir parejas, no repetir rivales,
++ * equilibrio, nivel_efectivo del líder) y se queda con el mejor — y si hay
++ * varios igual de buenos, elige entre ellos al azar, para no repetir
+  * siempre la misma "solución obvia".
+  *
+  * El nivel de cada jugador ya no lo revisa una IA tampoco: se ajusta solo
+@@ -110,11 +111,13 @@
+         $anio    ??= (int) now()->year;
+         $ajustes   = AjustesIA::actuales();
+ 
+-        [$ventanaParejas, $ventanaPartidos] = $this->ventanas($ajustes);
++        $ventanas = $this->ventanas($ajustes);
+ 
+-        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanaParejas))
++        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanas['parejas']))
+             ->keyBy(fn ($p) => implode('-', $p['ids']));
+-        $partidosVetados = collect($this->historial->partidosRecientes($ventanaPartidos))
++        $rivalesVetados  = collect($this->historial->rivalesRecientes($ventanas['rivales']))
++            ->keyBy(fn ($p) => implode('-', $p['ids']));
++        $partidosVetados = collect($this->historial->partidosRecientes($ventanas['partidos']))
+             ->keyBy(fn ($p) => implode('-', $p['ids']));
+ 
+         $avisos = [];
+@@ -134,6 +137,25 @@
+                     $avisos[] = 'La pareja '.$repetida['nombres'].' ya jugó junta el '.$repetida['fecha'].'.';
+                 }
+             }
++
++            // Los cruces repetidos se agrupan en una sola línea por pista:
++            // hay 4 por partido y en lista suelta inundarían el aviso.
++            $cruces = [];
++
++            foreach ($datos['equipo_a'] as $uno) {
++                foreach ($datos['equipo_b'] as $otro) {
++                    $clave = collect([(int) $uno, (int) $otro])->sort()->values()->implode('-');
++
++                    if ($repetido = $rivalesVetados->get($clave)) {
++                        $cruces[] = $repetido['nombres'].' (el '.$repetido['fecha'].')';
++                    }
++                }
++            }
++
++            if ($cruces) {
++                $avisos[] = 'Pista '.($datos['pista'] ?? '?').': cruces que ya se dieron hace poco: '
++                    .implode(', ', $cruces).'.';
++            }
+         }
+ 
+         return array_values(array_unique(array_merge($avisos, $this->avisosDesequilibrio($propuesta, $anio, $ajustes))));
+@@ -200,11 +222,13 @@
+         $convocados = $ordenados->slice(0, $enJuego)->values()->all();
+         $noJuegan   = $ordenados->slice($enJuego)->values()->all();
+ 
+-        [$ventanaParejas, $ventanaPartidos] = $this->ventanas($ajustes);
++        $ventanas = $this->ventanas($ajustes);
+ 
+-        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanaParejas))
++        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanas['parejas']))
++            ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
++        $rivalesVetados  = collect($this->historial->rivalesRecientes($ventanas['rivales']))
+             ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
+-        $partidosVetados = collect($this->historial->partidosRecientes($ventanaPartidos))
++        $partidosVetados = collect($this->historial->partidosRecientes($ventanas['partidos']))
+             ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
+ 
+         [$companeros, $rivales] = $this->historial->coincidenciasCrudas($anio);
+@@ -214,22 +238,30 @@
+         $pesoRival      = $this->pesoRival($ajustes);
+         $pesoEquilibrio = $this->pesoEquilibrio($ajustes);
+ 
+-        $intentos   = (int) min(3000, max(400, count($convocados) * 150));
+-        $resultados = [];
++        // El coste de un cuarteto no depende de en qué pista caiga ni de lo
++        // que pase en las otras, así que se calcula una sola vez por
++        // cuarteto y se reutiliza: con 12 convocados hay 495 cuartetos
++        // posibles frente a 5.775 repartos, y sin esta caché cada cuarteto
++        // se recalcularía decenas de veces.
++        $cacheCuartetos = [];
+ 
+-        for ($i = 0; $i < $intentos; $i++) {
+-            $barajado  = collect($convocados)->shuffle()->values()->all();
+-            $particion = array_chunk($barajado, $porPista);
++        $mejorCoste = INF;
++        $candidatos = [];
+ 
++        foreach ($this->repartosPosibles($convocados, $porPista) as $particion) {
+             $costeTotal = 0.0;
+             $pistasCalculadas = [];
+ 
+             foreach ($particion as $indicePista => $cuarteto) {
+-                [$equipoA, $equipoB, $coste] = $this->mejorSplitDeCuarteto(
+-                    $cuarteto, $niveles, $parejasVetadas, $partidosVetados, $companeros, $rivales,
+-                    $pesoPareja, $pesoRival, $pesoEquilibrio,
++                $clave = $this->clave($cuarteto);
++
++                $cacheCuartetos[$clave] ??= $this->mejorSplitDeCuarteto(
++                    $cuarteto, $niveles, $parejasVetadas, $rivalesVetados, $partidosVetados,
++                    $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
+                 );
+ 
++                [$equipoA, $equipoB, $coste] = $cacheCuartetos[$clave];
++
+                 $costeTotal += $coste;
+                 $pistasCalculadas[] = [
+                     'pista'    => $indicePista + 1,
+@@ -238,21 +270,160 @@
+                 ];
+             }
+ 
+-            $resultados[] = ['coste' => $costeTotal, 'pistas' => $pistasCalculadas];
++            // Se guardan todos los repartos que empatan de verdad con el
++            // mejor visto hasta ahora, y al final se elige entre ellos al
++            // azar; cuando aparece uno mejor, los que se quedan lejos se
++            // descartan para no ir acumulando miles en memoria.
++            if ($costeTotal < $mejorCoste) {
++                $mejorCoste = $costeTotal;
++                $candidatos = array_values(array_filter(
++                    $candidatos,
++                    fn ($c) => $c['coste'] <= $mejorCoste + 0.5,
++                ));
++            }
++
++            if ($costeTotal <= $mejorCoste + 0.5) {
++                $candidatos[] = ['coste' => $costeTotal, 'pistas' => $pistasCalculadas];
++            }
+         }
+ 
+-        $mejorCoste = collect($resultados)->min('coste');
+-        $candidatos = collect($resultados)->filter(fn ($r) => $r['coste'] <= $mejorCoste + 0.5)->values()->all();
+-        $elegido    = $candidatos[array_rand($candidatos)];
++        $elegido = $candidatos[array_rand($candidatos)];
+ 
+         return ['partidos' => $elegido['pistas'], 'no_juegan' => $noJuegan];
+     }
+ 
++    /**
++     * Los repartos de los convocados en pistas de 4 que hay que puntuar.
++     *
++     * Con 2 o 3 pistas (lo que permite el torneo) salen como mucho 5.775
++     * repartos distintos, así que se recorren TODOS y el mejor es el mejor
++     * de verdad. Antes se probaban unos miles al azar, que con un solo
++     * objetivo bastaba; ahora que parejas y rivales compiten entre sí, la
++     * mejor combinación suele ser una concreta y el muestreo se la dejaba
++     * por el camino más veces de la cuenta.
++     *
++     * Si algún día se sube pistas_max y la cuenta se dispara, vuelve solo
++     * al muestreo al azar de siempre.
++     *
++     * @param  array<int>  $convocados
++     * @return iterable<int, array<int, array<int>>>
++     */
++    private function repartosPosibles(array $convocados, int $porPista): iterable
++    {
++        if ($this->cuantosRepartos(count($convocados), $porPista) <= 50000) {
++            return $this->todosLosRepartos($convocados, $porPista);
++        }
++
++        return $this->repartosAlAzar($convocados, $porPista, (int) min(3000, max(400, count($convocados) * 150)));
++    }
++
++    /** Cuántos repartos distintos salen, para decidir si caben todos. */
++    private function cuantosRepartos(int $convocados, int $porPista): float
++    {
++        $total = 1.0;
++
++        for ($quedan = $convocados; $quedan > 0; $quedan -= $porPista) {
++            // Fijado el primero que queda, sus compañeros de pista salen de
++            // entre los demás; así cada reparto se cuenta una sola vez.
++            $total *= $this->combinatorio($quedan - 1, $porPista - 1);
++
++            if ($total > 1e9) {
++                return $total;
++            }
++        }
++
++        return $total;
++    }
++
++    private function combinatorio(int $de, int $tomando): float
++    {
++        $total = 1.0;
++
++        for ($i = 0; $i < $tomando; $i++) {
++            $total = $total * ($de - $i) / ($i + 1);
++        }
++
++        return $total;
++    }
++
++    /**
++     * Todos los repartos posibles, sin repetir el mismo con las pistas en
++     * otro orden: se fija el primer jugador que queda, se le buscan 3
++     * compañeros y se sigue con el resto.
++     *
++     * @return \Generator<int, array<int, array<int>>>
++     */
++    private function todosLosRepartos(array $jugadores, int $porPista): \Generator
++    {
++        if ($jugadores === []) {
++            yield [];
++
++            return;
++        }
++
++        $primero = array_shift($jugadores);
++
++        foreach ($this->combinaciones($jugadores, $porPista - 1) as [$acompanantes, $resto]) {
++            foreach ($this->todosLosRepartos($resto, $porPista) as $siguientes) {
++                yield [[$primero, ...$acompanantes], ...$siguientes];
++            }
++        }
++    }
++
++    /**
++     * Cada forma de elegir $cuantos de la lista, junto con lo que sobra.
++     *
++     * @return \Generator<int, array{0: array<int>, 1: array<int>}>
++     */
++    private function combinaciones(array $jugadores, int $cuantos): \Generator
++    {
++        if ($cuantos === 0) {
++            yield [[], $jugadores];
++
++            return;
++        }
++
++        $total = count($jugadores);
++
++        for ($i = 0; $i <= $total - $cuantos; $i++) {
++            $elegido   = $jugadores[$i];
++            $siguientes = array_slice($jugadores, $i + 1);
++            $saltados   = array_slice($jugadores, 0, $i);
++
++            foreach ($this->combinaciones($siguientes, $cuantos - 1) as [$grupo, $sobrantes]) {
++                yield [[$elegido, ...$grupo], [...$saltados, ...$sobrantes]];
++            }
++        }
++    }
++
++    /**
++     * Red de seguridad para cuando hay demasiados repartos: el muestreo al
++     * azar de toda la vida.
++     *
++     * @return \Generator<int, array<int, array<int>>>
++     */
++    private function repartosAlAzar(array $jugadores, int $porPista, int $intentos): \Generator
++    {
++        for ($i = 0; $i < $intentos; $i++) {
++            yield array_chunk(collect($jugadores)->shuffle()->values()->all(), $porPista);
++        }
++    }
++
++    /** Clave estable de un grupo de jugadores, para cachés y vetos. */
++    private function clave(array $jugadorIds): string
++    {
++        $ids = array_map('intval', $jugadorIds);
++        sort($ids);
++
++        return implode('-', $ids);
++    }
++
+     /** De los 3 repartos posibles de 4 en 2v2, el de menor coste. */
+     private function mejorSplitDeCuarteto(
+         array $cuarteto,
+         array $niveles,
+         array $parejasVetadas,
++        array $rivalesVetados,
+         array $partidosVetados,
+         array $companeros,
+         array $rivales,
+@@ -268,22 +439,29 @@
+             [[$a, $d], [$b, $c]],
+         ];
+ 
+-        $mejor      = null;
++        $mejores    = [];
+         $mejorCoste = INF;
+ 
+         foreach ($opciones as [$equipoA, $equipoB]) {
+             $coste = $this->costePista(
+-                $cuarteto, $equipoA, $equipoB, $niveles, $parejasVetadas, $partidosVetados,
+-                $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
++                $cuarteto, $equipoA, $equipoB, $niveles, $parejasVetadas, $rivalesVetados,
++                $partidosVetados, $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
+             );
+ 
+-            if ($coste < $mejorCoste) {
++            // Si dos formas de partir el cuarteto valen lo mismo, se guardan
++            // las dos y luego se echa a suertes, igual que con los repartos.
++            if ($coste < $mejorCoste - 0.001) {
+                 $mejorCoste = $coste;
+-                $mejor = [$equipoA, $equipoB];
++                $mejores    = [[$equipoA, $equipoB]];
++            } elseif ($coste <= $mejorCoste + 0.001) {
++                $mejorCoste = min($mejorCoste, $coste);
++                $mejores[]  = [$equipoA, $equipoB];
+             }
+         }
+ 
+-        return [$mejor[0], $mejor[1], $mejorCoste];
++        [$equipoA, $equipoB] = $mejores[array_rand($mejores)];
++
++        return [$equipoA, $equipoB, $mejorCoste];
+     }
+ 
+     /**
+@@ -304,6 +482,7 @@
+         array $equipoB,
+         array $niveles,
+         array $parejasVetadas,
++        array $rivalesVetados,
+         array $partidosVetados,
+         array $companeros,
+         array $rivales,
+@@ -313,14 +492,12 @@
+     ): float {
+         $coste = 0.0;
+ 
+-        $claveCuarteto = collect($cuarteto)->sort()->values()->implode('-');
+-        if (isset($partidosVetados[$claveCuarteto])) {
++        if (isset($partidosVetados[$this->clave($cuarteto)])) {
+             $coste += 60.0;
+         }
+ 
+         foreach ([$equipoA, $equipoB] as $pareja) {
+-            $clave = collect($pareja)->sort()->values()->implode('-');
+-            if (isset($parejasVetadas[$clave])) {
++            if (isset($parejasVetadas[$this->clave($pareja)])) {
+                 $coste += 40.0;
+             }
+         }
+@@ -330,6 +507,14 @@
+ 
+         foreach ($equipoA as $x) {
+             foreach ($equipoB as $y) {
++                // Veto al cruce reciente: es el hermano pequeño del de
++                // parejas (18 frente a 40), así que sigue saliendo más
++                // barato repetir un par de cruces que una sola pareja,
++                // pero ya no sale gratis como antes.
++                if (isset($rivalesVetados[$this->clave([$x, $y])])) {
++                    $coste += 18.0;
++                }
++
+                 $coste += $pesoRival * (int) ($rivales[$x][$y] ?? 0);
+             }
+         }
+@@ -370,9 +555,9 @@
+             ->unique()->values()->all();
+ 
+         $niveles = $this->nivelesEfectivos($idsQueJuegan, $anio, $ajustes);
+-        [$companeros] = $this->historial->coincidenciasCrudas($anio);
++        [$companeros, $rivales] = $this->historial->coincidenciasCrudas($anio);
+ 
+-        $partidos = collect($asignacion['partidos'])->map(function (array $p) use ($niveles, $companeros) {
++        $partidos = collect($asignacion['partidos'])->map(function (array $p) use ($niveles, $companeros, $rivales) {
+             $sumaA = round((float) ($niveles[$p['equipo_a'][0]] ?? 0) + (float) ($niveles[$p['equipo_a'][1]] ?? 0), 1);
+             $sumaB = round((float) ($niveles[$p['equipo_b'][0]] ?? 0) + (float) ($niveles[$p['equipo_b'][1]] ?? 0), 1);
+             $diferencia = round(abs($sumaA - $sumaB), 1);
+@@ -391,13 +576,23 @@
+                 $frase .= ' Las dos parejas son inéditas esta temporada.';
+             }
+ 
++            $crucesNuevos = collect($p['equipo_a'])->every(
++                fn ($uno) => collect($p['equipo_b'])->every(
++                    fn ($otro) => (int) ($rivales[$uno][$otro] ?? 0) === 0,
++                ),
++            );
++
++            if ($crucesNuevos) {
++                $frase .= ' Ninguno de los cuatro se había enfrentado antes esta temporada.';
++            }
++
+             $p['motivo'] = $frase;
+ 
+             return $p;
+         })->all();
+ 
+-        $explicacion = 'Repartidos '.count($partidos).' pistas priorizando variedad (parejas y'
+-            .' cruces poco repetidos esta temporada) y equilibrio de nivel dentro de cada pista.';
++        $explicacion = 'Repartidos '.count($partidos).' pistas evitando repetir parejas y,'
++            .' aparte, repetir rivales, y cuadrando el nivel dentro de cada pista.';
+ 
+         return [
+             'no_juegan'   => $asignacion['no_juegan'],
+@@ -409,36 +604,43 @@
+     // ── Prioridades del organizador (Ajustes IA) ────────────────────────────
+ 
+     /**
+-     * La ventana base de "no repetir" (config/tenis.php) se ensancha o se
+-     * estrecha según la prioridad que le des a evitar repeticiones. En el
+-     * nivel máximo no es "mirar un poco más atrás": es repasar toda la
+-     * temporada jugada hasta ahora, así que la ventana cubre todas las
+-     * jornadas que existan.
++     * Cuántas jornadas atrás mira cada veto. La ventana base
++     * (config/tenis.php) se ensancha o se estrecha según su ajuste, y cada
++     * tipo de repetición tiene ya el suyo propio: se pueden apretar los
++     * cruces sin tocar las parejas. En el nivel máximo no es "mirar un poco
++     * más atrás": es repasar toda la temporada jugada hasta ahora.
++     *
++     * La del cuarteto completo va con el más alto de los dos, porque repetir
++     * un partido entero es a la vez repetir parejas y repetir cruces.
+      *
+-     * @return array{0: int, 1: int} [ventana parejas, ventana partidos]
++     * @return array{parejas: int, rivales: int, partidos: int}
+      */
+     private function ventanas(AjustesIA $ajustes): array
+     {
+-        $parejas  = (int) config('tenis.no_repetir.parejas_ultimas_jornadas', 4);
+-        $partidos = (int) config('tenis.no_repetir.partidos_ultimas_jornadas', 4);
++        $parejas = $ajustes->prioridad_no_repetir_parejas;
++        $rivales = $ajustes->prioridad_no_repetir_rivales;
+ 
+-        if ($ajustes->prioridad_no_repetir >= 5) {
+-            $todas = max(1, Jornada::count());
++        return [
++            'parejas'  => $this->ventana((int) config('tenis.no_repetir.parejas_ultimas_jornadas', 4), $parejas),
++            'rivales'  => $this->ventana((int) config('tenis.no_repetir.rivales_ultimas_jornadas', 2), $rivales),
++            'partidos' => $this->ventana((int) config('tenis.no_repetir.partidos_ultimas_jornadas', 4), max($parejas, $rivales)),
++        ];
++    }
+ 
+-            return [$todas, $todas];
++    private function ventana(int $base, int $prioridad): int
++    {
++        if ($prioridad >= 5) {
++            return max(1, Jornada::count());
+         }
+ 
+-        $factor = match ($ajustes->prioridad_no_repetir) {
++        $factor = match ($prioridad) {
+             1 => 0.5,
+             2 => 0.75,
+             4 => 1.5,
+             default => 1.0,
+         };
+ 
+-        return [
+-            max(1, (int) round($parejas * $factor)),
+-            max(1, (int) round($partidos * $factor)),
+-        ];
++        return max(1, (int) round($base * $factor));
+     }
+ 
+     /** A más prioridad de equilibrio, más bajo el umbral que dispara el aviso. */
+@@ -467,7 +669,7 @@
+      */
+     private function pesoPareja(AjustesIA $ajustes): float
+     {
+-        return match ($ajustes->prioridad_no_repetir) {
++        return match ($ajustes->prioridad_no_repetir_parejas) {
+             1 => 0.3,
+             2 => 1.0,
+             4 => 6.0,
+@@ -476,15 +678,21 @@
+         };
+     }
+ 
+-    /** Igual que pesoPareja(), pero para haber sido solo rivales (pesa menos). */
++    /**
++     * Igual que pesoPareja(), pero para haberse enfrentado. Sigue pesando
++     * menos que repetir pareja a igualdad de ajuste (1,4 frente a 2,0 en el
++     * nivel normal), que es como debe ser, pero es el doble de lo que pesaba
++     * antes: con la escala vieja los cruces no llegaban a competir nunca con
++     * el equilibrio y acababan repitiéndose solos.
++     */
+     private function pesoRival(AjustesIA $ajustes): float
+     {
+-        return match ($ajustes->prioridad_no_repetir) {
+-            1 => 0.1,
+-            2 => 0.3,
+-            4 => 2.0,
+-            5 => 5.0,
+-            default => 0.7,
++        return match ($ajustes->prioridad_no_repetir_rivales) {
++            1 => 0.2,
++            2 => 0.6,
++            4 => 3.5,
++            5 => 8.0,
++            default => 1.4,
+         };
+     }
+ 
+--- a/app/Services/HistorialTenis.php
++++ b/app/Services/HistorialTenis.php
+@@ -46,6 +46,48 @@
+     }
+ 
+     /**
++     * Cruces (jugador contra jugador, uno en cada pareja) de las últimas N
++     * jornadas. El equivalente de parejasRecientes() para los rivales.
++     *
++     * Ojo con la ventana: cada pista genera 4 cruces y solo 2 parejas, así
++     * que mirar atrás el mismo número de jornadas veta el doble de dúos.
++     * Por eso la ventana base de rivales (config/tenis.php) es más corta.
++     *
++     * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>
++     */
++    public function rivalesRecientes(?int $jornadas = null): array
++    {
++        $jornadas ??= (int) config('tenis.no_repetir.rivales_ultimas_jornadas', 2);
++        $vistos = [];
++
++        foreach ($this->ultimasJornadasConPartidos($jornadas) as $jornada) {
++            foreach ($jornada->partidos as $partido) {
++                $a = $partido->equipo('a');
++                $b = $partido->equipo('b');
++
++                if ($a->count() !== 2 || $b->count() !== 2) {
++                    continue;
++                }
++
++                foreach ($a as $uno) {
++                    foreach ($b as $otro) {
++                        $ids   = collect([$uno->id, $otro->id])->sort()->values()->all();
++                        $clave = implode('-', $ids);
++
++                        $vistos[$clave] ??= [
++                            'ids'     => $ids,
++                            'nombres' => $uno->nombre.' vs '.$otro->nombre,
++                            'fecha'   => $jornada->fecha->toDateString(),
++                        ];
++                    }
++                }
++            }
++        }
++
++        return array_values($vistos);
++    }
++
++    /**
+      * Enfrentamientos (los mismos 4 jugadores en una pista) de las últimas N jornadas.
+      *
+      * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>
+--- a/app/Models/AjustesIA.php
++++ b/app/Models/AjustesIA.php
+@@ -10,23 +10,26 @@
+ 
+     protected $fillable = [
+         'prioridad_equilibrio',
+-        'prioridad_no_repetir',
++        'prioridad_no_repetir_parejas',
++        'prioridad_no_repetir_rivales',
+         'prioridad_frenar_lider',
+     ];
+ 
+     protected $casts = [
+-        'prioridad_equilibrio'   => 'integer',
+-        'prioridad_no_repetir'   => 'integer',
+-        'prioridad_frenar_lider' => 'integer',
++        'prioridad_equilibrio'         => 'integer',
++        'prioridad_no_repetir_parejas' => 'integer',
++        'prioridad_no_repetir_rivales' => 'integer',
++        'prioridad_frenar_lider'       => 'integer',
+     ];
+ 
+     /** Siempre la misma fila (id 1); se crea sola con valores por defecto. */
+     public static function actuales(): self
+     {
+         return static::firstOrCreate(['id' => 1], [
+-            'prioridad_equilibrio'   => 3,
+-            'prioridad_no_repetir'   => 3,
+-            'prioridad_frenar_lider' => 3,
++            'prioridad_equilibrio'         => 3,
++            'prioridad_no_repetir_parejas' => 3,
++            'prioridad_no_repetir_rivales' => 3,
++            'prioridad_frenar_lider'       => 3,
+         ]);
+     }
+ 
+@@ -41,14 +44,25 @@
+         };
+     }
+ 
+-    public static function fraseVariedad(int $nivel): string
++    public static function fraseParejas(int $nivel): string
+     {
+         return match ($nivel) {
+-            1 => 'casi no evita repetir',
+-            2 => 'evita repetir un poco',
+-            4 => 'evita repetir bastante',
+-            5 => 'evita repetir a toda costa',
+-            default => 'evita repetir lo normal',
++            1 => 'casi no evita repetir parejas',
++            2 => 'evita repetir parejas un poco',
++            4 => 'evita repetir parejas bastante',
++            5 => 'evita repetir parejas a toda costa',
++            default => 'evita repetir parejas lo normal',
++        };
++    }
++
++    public static function fraseRivales(int $nivel): string
++    {
++        return match ($nivel) {
++            1 => 'casi no mira los cruces',
++            2 => 'evita repetir rivales un poco',
++            4 => 'evita repetir rivales bastante',
++            5 => 'evita repetir rivales a toda costa',
++            default => 'evita repetir rivales lo normal',
+         };
+     }
+ 
+--- a/app/Livewire/AjustesIA.php
++++ b/app/Livewire/AjustesIA.php
+@@ -13,9 +13,10 @@
+ #[Layout('layouts.app')]
+ class AjustesIA extends Component
+ {
+-    public int $prioridadEquilibrio  = 3;
+-    public int $prioridadNoRepetir   = 3;
+-    public int $prioridadFrenarLider = 3;
++    public int $prioridadEquilibrio      = 3;
++    public int $prioridadNoRepetirParejas = 3;
++    public int $prioridadNoRepetirRivales = 3;
++    public int $prioridadFrenarLider     = 3;
+ 
+     public function mount(): void
+     {
+@@ -23,39 +24,49 @@
+ 
+         $actuales = ConfigIA::actuales();
+ 
+-        $this->prioridadEquilibrio  = $actuales->prioridad_equilibrio;
+-        $this->prioridadNoRepetir   = $actuales->prioridad_no_repetir;
+-        $this->prioridadFrenarLider = $actuales->prioridad_frenar_lider;
++        $this->prioridadEquilibrio       = $actuales->prioridad_equilibrio;
++        $this->prioridadNoRepetirParejas = $actuales->prioridad_no_repetir_parejas;
++        $this->prioridadNoRepetirRivales = $actuales->prioridad_no_repetir_rivales;
++        $this->prioridadFrenarLider      = $actuales->prioridad_frenar_lider;
+     }
+ 
+     /** Preajustes rápidos: solo mueven los sliders, hay que guardar aparte. */
+     public function preset(string $nombre): void
+     {
+-        [$this->prioridadNoRepetir, $this->prioridadEquilibrio, $this->prioridadFrenarLider] = match ($nombre) {
+-            'variedad'   => [5, 3, 3],
+-            'equilibrio' => [3, 5, 3],
+-            'competitivo' => [3, 3, 5],
+-            default      => [3, 3, 3], // equilibrado
++        [
++            $this->prioridadNoRepetirParejas,
++            $this->prioridadNoRepetirRivales,
++            $this->prioridadEquilibrio,
++            $this->prioridadFrenarLider,
++        ] = match ($nombre) {
++            'variedad'    => [5, 5, 3, 3],
++            'cruces'      => [3, 5, 3, 3],
++            'equilibrio'  => [3, 3, 5, 3],
++            'competitivo' => [3, 3, 3, 5],
++            default       => [3, 3, 3, 3], // equilibrado
+         };
+     }
+ 
+     public function guardar(): void
+     {
+         $datos = $this->validate([
+-            'prioridadEquilibrio'  => ['required', 'integer', 'between:1,5'],
+-            'prioridadNoRepetir'   => ['required', 'integer', 'between:1,5'],
+-            'prioridadFrenarLider' => ['required', 'integer', 'between:1,5'],
++            'prioridadEquilibrio'       => ['required', 'integer', 'between:1,5'],
++            'prioridadNoRepetirParejas' => ['required', 'integer', 'between:1,5'],
++            'prioridadNoRepetirRivales' => ['required', 'integer', 'between:1,5'],
++            'prioridadFrenarLider'      => ['required', 'integer', 'between:1,5'],
+         ]);
+ 
+         ConfigIA::actuales()->update([
+-            'prioridad_equilibrio'   => $datos['prioridadEquilibrio'],
+-            'prioridad_no_repetir'   => $datos['prioridadNoRepetir'],
+-            'prioridad_frenar_lider' => $datos['prioridadFrenarLider'],
++            'prioridad_equilibrio'         => $datos['prioridadEquilibrio'],
++            'prioridad_no_repetir_parejas' => $datos['prioridadNoRepetirParejas'],
++            'prioridad_no_repetir_rivales' => $datos['prioridadNoRepetirRivales'],
++            'prioridad_frenar_lider'       => $datos['prioridadFrenarLider'],
+         ]);
+ 
+         Auditoria::registrar(
+             'ajustes.guardados',
+-            'Pesos del algoritmo: variedad '.$datos['prioridadNoRepetir']
++            'Pesos del algoritmo: no repetir parejas '.$datos['prioridadNoRepetirParejas']
++                .', no repetir rivales '.$datos['prioridadNoRepetirRivales']
+                 .', equilibrio '.$datos['prioridadEquilibrio']
+                 .', frenar al líder '.$datos['prioridadFrenarLider'].'.',
+         );
+@@ -67,17 +78,23 @@
+     {
+         $anio = (int) now()->year;
+ 
+-        [$companeros] = $historial->coincidenciasCrudas($anio);
+-
+-        $clavesUnicas = collect($companeros)
+-            ->flatMap(fn ($otros, $id) => collect(array_keys($otros))
+-                ->map(fn ($otroId) => collect([$id, $otroId])->sort()->implode('-')))
+-            ->unique();
++        [$companeros, $rivales] = $historial->coincidenciasCrudas($anio);
+ 
+         return view('livewire.ajustes-ia', [
+             'jornadasJugadas'  => Jornada::whereYear('fecha', $anio)->count(),
+-            'parejasDistintas' => $clavesUnicas->count(),
++            'parejasDistintas' => $this->clavesUnicas($companeros)->count(),
+             'parejaMasVista'   => collect($companeros)->flatten()->max() ?? 0,
++            'crucesDistintos'  => $this->clavesUnicas($rivales)->count(),
++            'cruceMasVisto'    => collect($rivales)->flatten()->max() ?? 0,
+         ]);
+     }
++
++    /** Cuenta cada dúo una sola vez, no una por cada sentido de la matriz. */
++    private function clavesUnicas(array $matriz)
++    {
++        return collect($matriz)
++            ->flatMap(fn ($otros, $id) => collect(array_keys($otros))
++                ->map(fn ($otroId) => collect([$id, $otroId])->sort()->implode('-')))
++            ->unique();
++    }
+ }
+--- a/config/tenis.php
++++ b/config/tenis.php
+@@ -30,9 +30,14 @@
+     // esto, se avisa al organizador aunque la IA no haya roto ninguna norma.
+     'aviso_desequilibrio_nivel' => 3,
+ 
++    // Cada una la estira o la encoge su propio ajuste de la app ("No repetir
++    // parejas" / "No repetir rivales"). La de rivales es más corta a
++    // propósito: cada pista crea 4 cruces y solo 2 parejas, así que con la
++    // misma ventana se vetarían el doble de dúos y no quedaría margen.
+     'no_repetir' => [
+         'partidos_ultimas_jornadas' => 4,   // mismo cuarteto enfrentado
+         'parejas_ultimas_jornadas'  => 4,   // misma pareja jugando junta
++        'rivales_ultimas_jornadas'  => 3,   // mismos dos jugadores enfrentados
+     ],
+ 
+     // Normas del torneo que se le pasan a la IA.
+--- a/resources/views/livewire/ajustes-ia.blade.php
++++ b/resources/views/livewire/ajustes-ia.blade.php
+@@ -26,6 +26,10 @@
+                     class="px-3 py-2 rounded-xl bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
+                 🔀 Máxima variedad
+             </button>
++            <button wire:click="preset('cruces')"
++                    class="px-3 py-2 rounded-xl bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
++                ⚔️ Cruces nuevos
++            </button>
+             <button wire:click="preset('equilibrio')"
+                     class="px-3 py-2 rounded-xl bg-cream-100 hover:bg-cream-200 text-ink-800 text-xs font-bold transition">
+                 🎯 Máximo equilibrio
+@@ -41,11 +45,20 @@
+             <div class="space-y-6">
+                 <div>
+                     <div class="flex items-baseline justify-between mb-1.5">
+-                        <label class="text-sm font-bold text-ink-800">Variedad</label>
+-                        <span class="text-xs font-mono text-brand-300">{{ \App\Models\AjustesIA::etiqueta($prioridadNoRepetir) }}</span>
++                        <label class="text-sm font-bold text-ink-800">No repetir parejas</label>
++                        <span class="text-xs font-mono text-brand-300">{{ \App\Models\AjustesIA::etiqueta($prioridadNoRepetirParejas) }}</span>
++                    </div>
++                    <input type="range" min="1" max="5" step="1" wire:model.live="prioridadNoRepetirParejas" class="w-full accent-brand-500">
++                    <p class="text-[11px] text-ink-700/50 mt-1">Cuánto evita que dos jugadores vuelvan a ser compañeros.</p>
++                </div>
++
++                <div>
++                    <div class="flex items-baseline justify-between mb-1.5">
++                        <label class="text-sm font-bold text-ink-800">No repetir rivales</label>
++                        <span class="text-xs font-mono text-brand-300">{{ \App\Models\AjustesIA::etiqueta($prioridadNoRepetirRivales) }}</span>
+                     </div>
+-                    <input type="range" min="1" max="5" step="1" wire:model.live="prioridadNoRepetir" class="w-full accent-brand-500">
+-                    <p class="text-[11px] text-ink-700/50 mt-1">Cuánto evita repetir parejas y cruces recientes.</p>
++                    <input type="range" min="1" max="5" step="1" wire:model.live="prioridadNoRepetirRivales" class="w-full accent-brand-500">
++                    <p class="text-[11px] text-ink-700/50 mt-1">Cuánto evita que dos jugadores vuelvan a enfrentarse.</p>
+                 </div>
+ 
+                 <div>
+@@ -71,10 +84,14 @@
+             <div class="mt-5 px-4 py-3 rounded-xl bg-cream-50 ring-1 ring-cream-200">
+                 <p class="text-xs text-ink-700/70">
+                     <span class="font-bold text-ink-800">Con esto:</span>
+-                    {{ \App\Models\AjustesIA::fraseVariedad($prioridadNoRepetir) }},
++                    {{ \App\Models\AjustesIA::fraseParejas($prioridadNoRepetirParejas) }},
++                    {{ \App\Models\AjustesIA::fraseRivales($prioridadNoRepetirRivales) }},
+                     {{ \App\Models\AjustesIA::fraseEquilibrio($prioridadEquilibrio) }},
+                     y {{ \App\Models\AjustesIA::fraseLider($prioridadFrenarLider) }}.
+                 </p>
++                <p class="text-[11px] text-ink-700/50 mt-2">
++                    Repetir pareja siempre le pesa más que repetir rival, aunque pongas los dos al mismo nivel.
++                </p>
+             </div>
+ 
+             <button wire:click="guardar"
+@@ -86,6 +103,7 @@
+         {{-- Estadísticas de la temporada --}}
+         <div class="soft-card p-5">
+             <h2 class="text-xs font-bold uppercase tracking-widest text-ink-700/45 mb-3">Esta temporada</h2>
++
+             <div class="grid grid-cols-3 gap-3">
+                 <div class="text-center">
+                     <p class="text-2xl font-bold text-ink-800 font-mono">{{ $jornadasJugadas }}</p>
+@@ -100,6 +118,17 @@
+                     <p class="text-[11px] text-ink-700/50 mt-0.5">veces la pareja más repetida</p>
+                 </div>
+             </div>
++
++            <div class="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-cream-200">
++                <div class="text-center">
++                    <p class="text-2xl font-bold text-ink-800 font-mono">{{ $crucesDistintos }}</p>
++                    <p class="text-[11px] text-ink-700/50 mt-0.5">cruces distintos</p>
++                </div>
++                <div class="text-center">
++                    <p class="text-2xl font-bold text-ink-800 font-mono">{{ $cruceMasVisto }}</p>
++                    <p class="text-[11px] text-ink-700/50 mt-0.5">veces el cruce más repetido</p>
++                </div>
++            </div>
+         </div>
+     </main>
+ </div>
+--- /dev/null
++++ b/database/migrations/2026_01_01_000015_separar_prioridades_no_repetir.php
+@@ -0,0 +1,52 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Schema;
++
++return new class extends Migration
++{
++    /**
++     * "Variedad" era un único ajuste que gobernaba a la vez el no repetir
++     * parejas y el no repetir rivales, así que no había forma de apretar
++     * los cruces sin apretar también las parejas. Se parte en dos.
++     *
++     * El valor que hubiera puesto se copia tal cual en los dos ajustes
++     * nuevos: quien ya tenía la variedad al 4 se queda con parejas 4 y
++     * rivales 4, y no nota nada raro hasta que decida separarlos.
++     */
++    public function up(): void
++    {
++        Schema::table('ajustes_ia', function (Blueprint $table) {
++            $table->unsignedTinyInteger('prioridad_no_repetir_parejas')->default(3)->after('prioridad_equilibrio');
++            $table->unsignedTinyInteger('prioridad_no_repetir_rivales')->default(3)->after('prioridad_no_repetir_parejas');
++        });
++
++        DB::table('ajustes_ia')->update([
++            'prioridad_no_repetir_parejas' => DB::raw('prioridad_no_repetir'),
++            'prioridad_no_repetir_rivales' => DB::raw('prioridad_no_repetir'),
++        ]);
++
++        Schema::table('ajustes_ia', function (Blueprint $table) {
++            $table->dropColumn('prioridad_no_repetir');
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table('ajustes_ia', function (Blueprint $table) {
++            $table->unsignedTinyInteger('prioridad_no_repetir')->default(3)->after('prioridad_equilibrio');
++        });
++
++        // Al volver atrás se pierde la distinción: nos quedamos con el de
++        // parejas, que es el que más peso tenía en el comportamiento viejo.
++        DB::table('ajustes_ia')->update([
++            'prioridad_no_repetir' => DB::raw('prioridad_no_repetir_parejas'),
++        ]);
++
++        Schema::table('ajustes_ia', function (Blueprint $table) {
++            $table->dropColumn(['prioridad_no_repetir_parejas', 'prioridad_no_repetir_rivales']);
++        });
++    }
++};
