@@ -25,16 +25,41 @@ use RuntimeException;
  * no lo era. Así que la asignación la calcula un algoritmo determinista
  * aquí mismo (calcularAsignacion, más abajo): recorre todos los repartos
  * posibles de los convocados en pistas de 4, puntúa cada uno según las
- * mismas reglas de siempre (no repetir parejas, no repetir rivales,
- * equilibrio, nivel_efectivo del líder) y se queda con el mejor — y si hay
- * varios igual de buenos, elige entre ellos al azar, para no repetir
- * siempre la misma "solución obvia".
+ * mismas reglas de siempre — no repetir parejas, no repetir rivales, cada
+ * una pesando más cuanto más reciente fue la última vez (pesoRecencia,
+ * dentro de EmparejadorIA), equilibrio, nivel_efectivo del líder — y se
+ * queda con el mejor. Si hay varios igual de buenos, elige entre ellos al
+ * azar, para no repetir siempre la misma "solución obvia".
  *
  * El nivel de cada jugador ya no lo revisa una IA tampoco: se ajusta solo
  * tras cada resultado con un sistema tipo Elo (ver App\Services\EloNiveles).
  */
 class EmparejadorIA
 {
+    /**
+     * Curvas de recencia (ver pesoRecencia): cuánto se multiplica el coste
+     * de una repetición según cuántas jornadas atrás pasó.
+     *
+     * RIVALES decae fuerte y sin suelo: hecha la cuenta, a la jornada
+     * inmediatamente anterior pesa 1, a la de hace 2 un 28%, a la de hace 3
+     * menos de un 8% — prácticamente nada — y sigue bajando desde ahí. Es
+     * justo el "muy relevante / más o menos / prácticamente irrelevante"
+     * que se busca.
+     *
+     * PAREJAS decae más rápido, con suelo en el 18%: a la de hace 2 pesa un
+     * 57%, a la de hace 4 un 27%, y a la de hace 5 ya solo un 22% — a partir
+     * de ahí se queda prácticamente pegada al suelo. La idea es que a las
+     * cuatro o cinco semanas nadie se acuerda ya de con quién jugó, así que
+     * a partir de ahí el equilibrio de nivel puede mandar sin que un
+     * recuerdo tan viejo se lo dispute; pero nunca llega a 0 del todo, para
+     * que en igualdad de condiciones el algoritmo siga prefiriendo caras
+     * nuevas antes que la primera pareja que se le ocurra.
+     */
+    private const DECAY_RIVAL  = 0.28;
+    private const SUELO_RIVAL  = 0.0;
+    private const DECAY_PAREJA = 0.47;
+    private const SUELO_PAREJA = 0.18;
+
     public function __construct(private HistorialTenis $historial)
     {
     }
@@ -54,7 +79,7 @@ class EmparejadorIA
         $ajustes = AjustesIA::actuales();
         $anio    = (int) $jornada->fecha->year;
 
-        $asignacion = $this->calcularAsignacion($jugadorIds, $pistas, $anio, $ajustes);
+        $asignacion = $this->calcularAsignacion($jugadorIds, $pistas, $anio, $jornada->fecha, $ajustes);
         $propuesta  = $this->redactar($asignacion, $anio, $ajustes);
 
         $this->validar($propuesta, $jugadorIds, $pistas);
@@ -205,7 +230,7 @@ class EmparejadorIA
      * @param  array<int>  $jugadorIds
      * @return array{partidos: array<int, array{pista: int, equipo_a: array<int>, equipo_b: array<int>}>, no_juegan: array<int>}
      */
-    private function calcularAsignacion(array $jugadorIds, int $pistas, int $anio, AjustesIA $ajustes): array
+    private function calcularAsignacion(array $jugadorIds, int $pistas, int $anio, \Carbon\Carbon $antesDe, AjustesIA $ajustes): array
     {
         $porPista = (int) config('tenis.jugadores_por_pista', 4);
         $enJuego  = $pistas * $porPista;
@@ -222,16 +247,7 @@ class EmparejadorIA
         $convocados = $ordenados->slice(0, $enJuego)->values()->all();
         $noJuegan   = $ordenados->slice($enJuego)->values()->all();
 
-        $ventanas = $this->ventanas($ajustes);
-
-        $parejasVetadas  = collect($this->historial->parejasRecientes($ventanas['parejas']))
-            ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
-        $rivalesVetados  = collect($this->historial->rivalesRecientes($ventanas['rivales']))
-            ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
-        $partidosVetados = collect($this->historial->partidosRecientes($ventanas['partidos']))
-            ->keyBy(fn ($p) => implode('-', $p['ids']))->all();
-
-        [$companeros, $rivales] = $this->historial->coincidenciasCrudas($anio);
+        [$companerosDist, $rivalesDist] = $this->historial->coincidenciasPorDistancia($anio, $antesDe);
         $niveles = $this->nivelesEfectivos($convocados, $anio, $ajustes);
 
         $pesoPareja     = $this->pesoPareja($ajustes);
@@ -256,8 +272,8 @@ class EmparejadorIA
                 $clave = $this->clave($cuarteto);
 
                 $cacheCuartetos[$clave] ??= $this->mejorSplitDeCuarteto(
-                    $cuarteto, $niveles, $parejasVetadas, $rivalesVetados, $partidosVetados,
-                    $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
+                    $cuarteto, $niveles, $companerosDist, $rivalesDist,
+                    $pesoPareja, $pesoRival, $pesoEquilibrio,
                 );
 
                 [$equipoA, $equipoB, $coste] = $cacheCuartetos[$clave];
@@ -422,11 +438,8 @@ class EmparejadorIA
     private function mejorSplitDeCuarteto(
         array $cuarteto,
         array $niveles,
-        array $parejasVetadas,
-        array $rivalesVetados,
-        array $partidosVetados,
-        array $companeros,
-        array $rivales,
+        array $companerosDist,
+        array $rivalesDist,
         float $pesoPareja,
         float $pesoRival,
         float $pesoEquilibrio,
@@ -444,8 +457,8 @@ class EmparejadorIA
 
         foreach ($opciones as [$equipoA, $equipoB]) {
             $coste = $this->costePista(
-                $cuarteto, $equipoA, $equipoB, $niveles, $parejasVetadas, $rivalesVetados,
-                $partidosVetados, $companeros, $rivales, $pesoPareja, $pesoRival, $pesoEquilibrio,
+                $equipoA, $equipoB, $niveles, $companerosDist, $rivalesDist,
+                $pesoPareja, $pesoRival, $pesoEquilibrio,
             );
 
             // Si dos formas de partir el cuarteto valen lo mismo, se guardan
@@ -476,46 +489,78 @@ class EmparejadorIA
      * y un matiz fijo de peso pequeño que evita juntar al mejor nivel con
      * el más flojo como compañeros aunque la suma cuadre.
      */
+    /**
+     * Cuánto pesa una repetición que pasó hace $n jornadas: 1.0 si fue la
+     * jornada inmediatamente anterior, y decae desde ahí — geométricamente,
+     * multiplicando por $decaimiento en cada jornada que se retrocede — sin
+     * bajar nunca de $suelo por mucho que haga.
+     *
+     * Con $suelo en 0, la repetición acaba pesando prácticamente nada
+     * (rivales); con $suelo por encima de 0, se queda para siempre en un
+     * runrún de fondo por muy antigua que sea la repetición (parejas), que
+     * es justo la diferencia que se busca entre las dos.
+     */
+    private function pesoRecencia(int $jornadasAtras, float $decaimiento, float $suelo): float
+    {
+        $n = max(1, $jornadasAtras);
+
+        return $suelo + (1 - $suelo) * ($decaimiento ** ($n - 1));
+    }
+
+    /** Suma el peso de recencia de cada vez que ocurrió, para una lista de distancias. */
+    private function costeRecenciaAcumulado(array $distancias, float $decaimiento, float $suelo): float
+    {
+        $total = 0.0;
+
+        foreach ($distancias as $n) {
+            $total += $this->pesoRecencia((int) $n, $decaimiento, $suelo);
+        }
+
+        return $total;
+    }
+
+    /**
+     * Coste de una pista concreta. Cada vez que dos jugadores han sido
+     * pareja o rivales esta temporada suma su propio coste, tanto más alto
+     * cuanto más reciente fue (pesoRecencia, arriba): la de la semana
+     * pasada cuenta casi como si fuera obligatorio evitarla, la de hace dos
+     * semanas bastante menos, y a partir de la de hace tres los rivales ya
+     * casi no computan — mientras que las parejas nunca llegan a pesar
+     * cero del todo, por vieja que sea la repetición (DECAY_PAREJA /
+     * SUELO_PAREJA más abajo).
+     *
+     * A esto se suma $pesoEquilibrio por cada punto de diferencia de
+     * nivel_efectivo entre las dos parejas — al cuadrado, así que crece
+     * rápido; sin umbral que la deje a cero por debajo de un mínimo, porque
+     * eso hacía que la variedad ganara siempre en cualquier diferencia
+     * moderada sin importar lo bajo que se pusiera su peso — y un matiz
+     * fijo de peso pequeño que evita juntar al mejor nivel con el más
+     * flojo como compañeros aunque la suma cuadre.
+     */
     private function costePista(
-        array $cuarteto,
         array $equipoA,
         array $equipoB,
         array $niveles,
-        array $parejasVetadas,
-        array $rivalesVetados,
-        array $partidosVetados,
-        array $companeros,
-        array $rivales,
+        array $companerosDist,
+        array $rivalesDist,
         float $pesoPareja,
         float $pesoRival,
         float $pesoEquilibrio,
     ): float {
         $coste = 0.0;
 
-        if (isset($partidosVetados[$this->clave($cuarteto)])) {
-            $coste += 60.0;
-        }
-
-        foreach ([$equipoA, $equipoB] as $pareja) {
-            if (isset($parejasVetadas[$this->clave($pareja)])) {
-                $coste += 40.0;
-            }
-        }
-
-        $coste += $pesoPareja * (int) ($companeros[$equipoA[0]][$equipoA[1]] ?? 0);
-        $coste += $pesoPareja * (int) ($companeros[$equipoB[0]][$equipoB[1]] ?? 0);
+        $coste += $pesoPareja * $this->costeRecenciaAcumulado(
+            $companerosDist[$equipoA[0]][$equipoA[1]] ?? [], self::DECAY_PAREJA, self::SUELO_PAREJA,
+        );
+        $coste += $pesoPareja * $this->costeRecenciaAcumulado(
+            $companerosDist[$equipoB[0]][$equipoB[1]] ?? [], self::DECAY_PAREJA, self::SUELO_PAREJA,
+        );
 
         foreach ($equipoA as $x) {
             foreach ($equipoB as $y) {
-                // Veto al cruce reciente: es el hermano pequeño del de
-                // parejas (18 frente a 40), así que sigue saliendo más
-                // barato repetir un par de cruces que una sola pareja,
-                // pero ya no sale gratis como antes.
-                if (isset($rivalesVetados[$this->clave([$x, $y])])) {
-                    $coste += 18.0;
-                }
-
-                $coste += $pesoRival * (int) ($rivales[$x][$y] ?? 0);
+                $coste += $pesoRival * $this->costeRecenciaAcumulado(
+                    $rivalesDist[$x][$y] ?? [], self::DECAY_RIVAL, self::SUELO_RIVAL,
+                );
             }
         }
 
@@ -591,8 +636,9 @@ class EmparejadorIA
             return $p;
         })->all();
 
-        $explicacion = 'Repartidos '.count($partidos).' pistas evitando repetir parejas y,'
-            .' aparte, repetir rivales, y cuadrando el nivel dentro de cada pista.';
+        $explicacion = 'Repartidos '.count($partidos).' pistas evitando repetir con quien se jugó'
+            .' hace poco (parejas y, aparte, rivales, pesando más lo más reciente) y cuadrando'
+            .' el nivel dentro de cada pista.';
 
         return [
             'no_juegan'   => $asignacion['no_juegan'],
@@ -604,14 +650,17 @@ class EmparejadorIA
     // ── Prioridades del organizador (Ajustes IA) ────────────────────────────
 
     /**
-     * Cuántas jornadas atrás mira cada veto. La ventana base
-     * (config/tenis.php) se ensancha o se estrecha según su ajuste, y cada
-     * tipo de repetición tiene ya el suyo propio: se pueden apretar los
-     * cruces sin tocar las parejas. En el nivel máximo no es "mirar un poco
-     * más atrás": es repasar toda la temporada jugada hasta ahora.
+     * Cuántas jornadas atrás mira cada AVISO (el "esto ya se repitió"
+     * que ve el organizador al revisar la propuesta) — el coste que decide
+     * la propia asignación ya no usa esto: ese usa coincidenciasPorDistancia()
+     * y pesa cada repetición según su recencia real, no según si cae dentro
+     * de una ventana. Esta ventana solo decide hasta cuándo merece la pena
+     * avisar; una repetición de hace 10 jornadas ya pesa poquísimo en el
+     * coste pero seguiría siendo ruido si se avisara de ella cada vez.
      *
-     * La del cuarteto completo va con el más alto de los dos, porque repetir
-     * un partido entero es a la vez repetir parejas y repetir cruces.
+     * La ventana base (config/tenis.php) se ensancha o se estrecha según la
+     * misma prioridad que ya se usa para el coste. En el nivel máximo no es
+     * "avisar un poco más atrás": es repasar toda la temporada jugada.
      *
      * @return array{parejas: int, rivales: int, partidos: int}
      */
@@ -660,39 +709,44 @@ class EmparejadorIA
     }
 
     /**
-     * Cuánto pesa en el coste que dos jugadores ya hayan sido PAREJA esta
-     * temporada. Esto es lo que de verdad evita que el algoritmo se quede
-     * atascado repitiendo siempre la combinación más equilibrada: avanzada
-     * la temporada, cuando todo el mundo ha coincidido ya un par de veces
-     * con todo el mundo, subir esto hace que hasta una diferencia pequeña
-     * de coincidencias pese más que el equilibrio, y fuerce variar.
+     * Cuánto pesa, por cada vez que ha pasado esta temporada, que dos
+     * jugadores hayan sido PAREJA — ya multiplicado por pesoRecencia(), así
+     * que esto es el coste de una repetición de la semana pasada (n=1); una
+     * de hace 2 o 3 semanas cuesta una fracción de esto, no esto mismo.
+     *
+     * Antes había, aparte, un veto fijo (+40) para cualquier repetición
+     * dentro de una ventana de jornadas configurada aparte; ahora ya no
+     * hace falta, pero a cambio este número tiene que ser bastante más alto
+     * que el peso plano de antes para lograr el mismo efecto disuasorio
+     * sobre una repetición de la semana pasada: en pruebas con temporadas
+     * simuladas, con el peso plano de antes (16) las parejas se repetían
+     * más rápido de lo que se pretendía porque ya no había veto que lo
+     * evitara.
      */
     private function pesoPareja(AjustesIA $ajustes): float
     {
         return match ($ajustes->prioridad_no_repetir_parejas) {
-            1 => 0.3,
-            2 => 1.0,
-            4 => 6.0,
-            5 => 15.0,
-            default => 2.0,
+            1 => 8.0,
+            2 => 22.0,
+            4 => 100.0,
+            5 => 200.0,
+            default => 45.0,
         };
     }
 
     /**
      * Igual que pesoPareja(), pero para haberse enfrentado. Sigue pesando
-     * menos que repetir pareja a igualdad de ajuste (1,4 frente a 2,0 en el
-     * nivel normal), que es como debe ser, pero es el doble de lo que pesaba
-     * antes: con la escala vieja los cruces no llegaban a competir nunca con
-     * el equilibrio y acababan repitiéndose solos.
+     * menos que repetir pareja a igualdad de ajuste (28 frente a 45 en el
+     * nivel normal), que es como debe ser.
      */
     private function pesoRival(AjustesIA $ajustes): float
     {
         return match ($ajustes->prioridad_no_repetir_rivales) {
-            1 => 0.2,
-            2 => 0.6,
-            4 => 3.5,
-            5 => 8.0,
-            default => 1.4,
+            1 => 6.0,
+            2 => 14.0,
+            4 => 62.0,
+            5 => 126.0,
+            default => 28.0,
         };
     }
 

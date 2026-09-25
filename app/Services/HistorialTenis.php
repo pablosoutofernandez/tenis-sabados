@@ -133,6 +133,62 @@ class HistorialTenis
     }
 
     /**
+     * Como coincidenciasCrudas(), pero en vez de un total de toda la
+     * temporada, guarda CUÁNDO fue cada vez: a cuántas jornadas jugadas de
+     * distancia está de $antesDe (1 = la última jornada jugada antes de
+     * esa fecha, 2 = la anterior a esa...). El algoritmo usa esto para que
+     * una coincidencia de la semana pasada pese mucho más que una de hace
+     * dos meses, en vez de darles a las dos el mismo peso por estar dentro
+     * de una ventana fija o el mismo peso por estar fuera de ella.
+     *
+     * Solo cuenta jornadas con partidos ya jugados (una jornada en blanco,
+     * como la que se está montando ahora mismo, no es "la anterior" de
+     * nadie), y solo las anteriores a $antesDe, para que no se cuele la
+     * propia jornada que se está generando ni ninguna posterior si se ha
+     * metido alguna jornada con fecha retroactiva.
+     *
+     * @return array{0: array, 1: array} [companeros, rivales], cada uno
+     *         [jugador_id => [otro_id => array<int> distancias en jornadas]]
+     */
+    public function coincidenciasPorDistancia(int $anio, \Carbon\Carbon $antesDe): array
+    {
+        $companeros = [];
+        $rivales    = [];
+
+        $jornadas = Jornada::with('partidos.jugadores')
+            ->whereYear('fecha', $anio)
+            ->where('fecha', '<', $antesDe->toDateString())
+            ->orderByDesc('fecha')
+            ->get()
+            ->filter(fn (Jornada $j) => $j->partidos->isNotEmpty())
+            ->values();
+
+        foreach ($jornadas as $indice => $jornada) {
+            $distancia = $indice + 1;
+
+            foreach ($jornada->partidos as $partido) {
+                $a = $partido->equipo('a');
+                $b = $partido->equipo('b');
+
+                foreach ([[$a, $b], [$b, $a]] as [$propio, $contrario]) {
+                    foreach ($propio as $jugador) {
+                        foreach ($propio as $otro) {
+                            if ($otro->id !== $jugador->id) {
+                                $companeros[$jugador->id][$otro->id][] = $distancia;
+                            }
+                        }
+                        foreach ($contrario as $rival) {
+                            $rivales[$jugador->id][$rival->id][] = $distancia;
+                        }
+                    }
+                }
+            }
+        }
+
+        return [$companeros, $rivales];
+    }
+
+    /**
      * Matriz cruda (por id) de cuántas veces cada jugador ha sido compañero
      * o rival de otro esta temporada. La usa el algoritmo de emparejamiento
      * para puntuar combinaciones.
