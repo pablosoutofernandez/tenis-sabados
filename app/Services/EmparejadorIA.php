@@ -41,10 +41,13 @@ class EmparejadorIA
      * de una repetición según cuántas jornadas atrás pasó.
      *
      * RIVALES decae en picado y sin suelo: a la jornada inmediatamente
-     * anterior pesa 1, pero a la de hace 2 ya solo un 6% — así de tajante,
-     * porque lo único que de verdad importa es no cruzarse con el mismo
-     * rival la semana siguiente; a partir de ahí, que se repita cuanto
-     * haga falta.
+     * anterior pesa 1, pero a la de hace 2 ya solo un 6% en "normal" — así
+     * de tajante, porque lo único que de verdad importa por defecto es no
+     * cruzarse con el mismo rival la semana siguiente. Eso sí, a partir de
+     * ahí es lo único de las cuatro curvas de esta clase que SÍ cambia de
+     * forma según la prioridad, no solo de magnitud (ver decayRival, más
+     * abajo): en los niveles altos, la de hace 2 empieza a pesar de verdad
+     * (hasta un 24% en el máximo), no solo la de la semana pasada.
      *
      * PAREJAS decae más despacio, con suelo en el 10%: a la de hace 2 pesa
      * un 54%, a la de hace 3 un 32%, a la de hace 4 ya solo un 21% — a
@@ -54,7 +57,6 @@ class EmparejadorIA
      * ese punto le deje sitio de verdad al equilibrio de nivel — antes
      * (suelo en 18%) le costaba más ceder ese sitio.
      */
-    private const DECAY_RIVAL  = 0.06;
     private const SUELO_RIVAL  = 0.0;
     private const DECAY_PAREJA = 0.49;
     private const SUELO_PAREJA = 0.10;
@@ -268,6 +270,7 @@ class EmparejadorIA
 
         $pesoPareja     = $this->pesoPareja($ajustes);
         $pesoRival      = $this->pesoRival($ajustes);
+        $decayRival     = $this->decayRival($ajustes);
         $pesoEquilibrio = $this->pesoEquilibrio($ajustes);
 
         // El coste de un cuarteto no depende de en qué pista caiga ni de lo
@@ -296,7 +299,7 @@ class EmparejadorIA
 
                 $cacheCuartetos[$clave] ??= $this->mejorSplitDeCuarteto(
                     $cuarteto, $niveles, $companerosDist, $rivalesDist,
-                    $pesoPareja, $pesoRival, $pesoEquilibrio,
+                    $pesoPareja, $pesoRival, $decayRival, $pesoEquilibrio,
                 );
 
                 [$equipoA, $equipoB, $coste] = $cacheCuartetos[$clave];
@@ -495,6 +498,7 @@ class EmparejadorIA
         array $rivalesDist,
         float $pesoPareja,
         float $pesoRival,
+        float $decayRival,
         float $pesoEquilibrio,
     ): array {
         [$a, $b, $c, $d] = $cuarteto;
@@ -511,7 +515,7 @@ class EmparejadorIA
         foreach ($opciones as [$equipoA, $equipoB]) {
             $coste = $this->costePista(
                 $equipoA, $equipoB, $niveles, $companerosDist, $rivalesDist,
-                $pesoPareja, $pesoRival, $pesoEquilibrio,
+                $pesoPareja, $pesoRival, $decayRival, $pesoEquilibrio,
             );
 
             // Si dos formas de partir el cuarteto valen lo mismo, se guardan
@@ -598,6 +602,7 @@ class EmparejadorIA
         array $rivalesDist,
         float $pesoPareja,
         float $pesoRival,
+        float $decayRival,
         float $pesoEquilibrio,
     ): float {
         $coste = 0.0;
@@ -612,7 +617,7 @@ class EmparejadorIA
         foreach ($equipoA as $x) {
             foreach ($equipoB as $y) {
                 $coste += $pesoRival * $this->costeRecenciaAcumulado(
-                    $rivalesDist[$x][$y] ?? [], self::DECAY_RIVAL, self::SUELO_RIVAL,
+                    $rivalesDist[$x][$y] ?? [], $decayRival, self::SUELO_RIVAL,
                 );
             }
         }
@@ -800,6 +805,26 @@ class EmparejadorIA
             4 => 62.0,
             5 => 126.0,
             default => 28.0,
+        };
+    }
+
+    /**
+     * Cuánto le llega a pesar la jornada de hace 2 semanas, en proporción a
+     * la de la semana pasada (que siempre vale el 100%). En "normal" se
+     * queda casi en nada (6%) — la idea de base sigue siendo que solo
+     * importa de verdad no cruzarse la semana siguiente — pero al subir la
+     * prioridad, además de pesar más en general (pesoRival, arriba), el
+     * algoritmo empieza a acordarse también de hace 2 semanas, no solo de
+     * la última.
+     */
+    private function decayRival(AjustesIA $ajustes): float
+    {
+        return match ($ajustes->prioridad_no_repetir_rivales) {
+            1 => 0.30,
+            2 => 0.40,
+            4 => 0.60,
+            5 => 0.70,
+            default => 0.50,
         };
     }
 
