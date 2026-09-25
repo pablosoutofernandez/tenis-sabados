@@ -73,7 +73,7 @@
                 @endforeach
             </div>
 
-            <div class="flex items-center gap-3 mt-4">
+            <div class="flex items-center gap-3 mt-4 flex-wrap">
                 @if($jornada?->estado === 'publicada')
                     <span class="px-4 py-2.5 rounded-xl bg-cream-100 text-ink-700/50 text-xs font-bold flex items-center gap-2 cursor-not-allowed">
                         <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,12 +82,31 @@
                         Jornada publicada (no se pueden alterar emparejamientos)
                     </span>
                 @else
-                    <button wire:click="generar" wire:loading.attr="disabled" wire:target="generar"
+                    <button wire:click="generar" wire:loading.attr="disabled" wire:target="generar,probarOtro"
                             class="px-5 py-2.5 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white text-sm font-bold shadow-soft hover:from-brand-500 hover:to-brand-700 transition disabled:opacity-50">
                         <span wire:loading.remove wire:target="generar">{{ $jornada?->partidos->count() ? 'Volver a repartir' : 'Generar emparejamientos' }}</span>
                         <span wire:loading wire:target="generar">Repartiendo pistas…</span>
                     </button>
-                    <p wire:loading wire:target="generar" class="text-xs text-ink-700/55">Puede tardar unos segundos.</p>
+
+                    @if($jornada?->partidos->count())
+                        <button wire:click="probarOtro" wire:loading.attr="disabled" wire:target="generar,probarOtro"
+                                class="px-5 py-2.5 rounded-xl bg-cream-100 hover:bg-cream-200 text-ink-800 text-sm font-bold transition disabled:opacity-50">
+                            <span wire:loading.remove wire:target="probarOtro">Probar otro emparejamiento</span>
+                            <span wire:loading wire:target="probarOtro">Buscando otra combinación…</span>
+                        </button>
+                    @endif
+
+                    <p wire:loading wire:target="generar,probarOtro" class="text-xs text-ink-700/55">Puede tardar unos segundos.</p>
+
+                    @if($this->diferenciaConLaPrimera !== null)
+                        <p class="text-xs text-ink-700/55 basis-full">
+                            @if($this->diferenciaConLaPrimera <= 0)
+                                Esta combinación reparte igual de bien que la primera que salió.
+                            @else
+                                Esta combinación es un {{ $this->diferenciaConLaPrimera }}% "peor" (según lo que mide el algoritmo) que la primera que salió — puede que aun así te encaje mejor.
+                            @endif
+                        </p>
+                    @endif
                 @endif
             </div>
         </div>
@@ -130,7 +149,7 @@
                     <p class="text-[11px] mt-2">
                         Puedes volver a repartir a ver si sale mejor, corregir la pista a mano (botón "Corregir"),
                         o dejarlo así. Si esto se repite jornada tras jornada, sube la prioridad de
-                        <a href="{{ route('ajustes-ia') }}" wire:navigate class="underline font-bold">"Variedad" en Ajustes</a>.
+                        <a href="{{ route('ajustes-ia') }}" wire:navigate class="underline font-bold">"No repetir parejas" o "No repetir rivales" en Ajustes</a>.
                     </p>
                 </div>
             @endif

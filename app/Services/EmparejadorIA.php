@@ -40,25 +40,24 @@ class EmparejadorIA
      * Curvas de recencia (ver pesoRecencia): cuánto se multiplica el coste
      * de una repetición según cuántas jornadas atrás pasó.
      *
-     * RIVALES decae fuerte y sin suelo: hecha la cuenta, a la jornada
-     * inmediatamente anterior pesa 1, a la de hace 2 un 28%, a la de hace 3
-     * menos de un 8% — prácticamente nada — y sigue bajando desde ahí. Es
-     * justo el "muy relevante / más o menos / prácticamente irrelevante"
-     * que se busca.
+     * RIVALES decae en picado y sin suelo: a la jornada inmediatamente
+     * anterior pesa 1, pero a la de hace 2 ya solo un 6% — así de tajante,
+     * porque lo único que de verdad importa es no cruzarse con el mismo
+     * rival la semana siguiente; a partir de ahí, que se repita cuanto
+     * haga falta.
      *
-     * PAREJAS decae más rápido, con suelo en el 18%: a la de hace 2 pesa un
-     * 57%, a la de hace 4 un 27%, y a la de hace 5 ya solo un 22% — a partir
-     * de ahí se queda prácticamente pegada al suelo. La idea es que a las
-     * cuatro o cinco semanas nadie se acuerda ya de con quién jugó, así que
-     * a partir de ahí el equilibrio de nivel puede mandar sin que un
-     * recuerdo tan viejo se lo dispute; pero nunca llega a 0 del todo, para
-     * que en igualdad de condiciones el algoritmo siga prefiriendo caras
-     * nuevas antes que la primera pareja que se le ocurra.
+     * PAREJAS decae más despacio, con suelo en el 10%: a la de hace 2 pesa
+     * un 54%, a la de hace 3 un 32%, a la de hace 4 ya solo un 21% — a
+     * partir de ahí importa cada vez menos, hasta quedarse rondando ese
+     * 10% de suelo por muy vieja que sea la repetición. La idea es que
+     * hasta la 3ª o 4ª semana siga pesando bastante evitarla, pero pasado
+     * ese punto le deje sitio de verdad al equilibrio de nivel — antes
+     * (suelo en 18%) le costaba más ceder ese sitio.
      */
-    private const DECAY_RIVAL  = 0.28;
+    private const DECAY_RIVAL  = 0.06;
     private const SUELO_RIVAL  = 0.0;
-    private const DECAY_PAREJA = 0.47;
-    private const SUELO_PAREJA = 0.18;
+    private const DECAY_PAREJA = 0.49;
+    private const SUELO_PAREJA = 0.10;
 
     public function __construct(private HistorialTenis $historial)
     {
@@ -68,7 +67,15 @@ class EmparejadorIA
      * @param  array<int>  $jugadorIds  Disponibles ese sábado.
      * @return array{no_juegan: array<int>, partidos: array<int, array>, explicacion: string}
      */
-    public function proponer(Jornada $jornada, array $jugadorIds): array
+    /**
+     * @param  array<int>  $jugadorIds  Disponibles ese sábado.
+     * @param  array<string>  $excluirFirmas  Firmas de repartos ya vistos (ver
+     *         firmaDeParticion) que no se deben repetir — es lo que usa
+     *         "Probar otro emparejamiento" para no enseñar dos veces la
+     *         misma agrupación de 4 en 4 dentro de la misma sesión.
+     * @return array{no_juegan: array<int>, partidos: array<int, array>, explicacion: string, coste: float, firma: string}
+     */
+    public function proponer(Jornada $jornada, array $jugadorIds, array $excluirFirmas = []): array
     {
         $pistas = $this->historial->pistasPara(count($jugadorIds));
 
@@ -79,10 +86,13 @@ class EmparejadorIA
         $ajustes = AjustesIA::actuales();
         $anio    = (int) $jornada->fecha->year;
 
-        $asignacion = $this->calcularAsignacion($jugadorIds, $pistas, $anio, $jornada->fecha, $ajustes);
+        $asignacion = $this->calcularAsignacion($jugadorIds, $pistas, $anio, $jornada->fecha, $ajustes, $excluirFirmas);
         $propuesta  = $this->redactar($asignacion, $anio, $ajustes);
 
         $this->validar($propuesta, $jugadorIds, $pistas);
+
+        $propuesta['coste'] = $asignacion['coste'];
+        $propuesta['firma'] = $asignacion['firma'];
 
         return $propuesta;
     }
@@ -227,10 +237,16 @@ class EmparejadorIA
      * Entre las que empatan de verdad, elige al azar — así no acaba siempre
      * con la misma combinación "obvia" cuando hay varias igual de válidas.
      *
+     * Las particiones cuya firma (firmaDeParticion) esté en $excluirFirmas
+     * se descartan directamente, como si no existieran — es lo que hace
+     * que "Probar otro emparejamiento" encuentre de verdad una agrupación
+     * distinta en vez de devolver la misma con las pistas renumeradas.
+     *
      * @param  array<int>  $jugadorIds
-     * @return array{partidos: array<int, array{pista: int, equipo_a: array<int>, equipo_b: array<int>}>, no_juegan: array<int>}
+     * @param  array<string>  $excluirFirmas
+     * @return array{partidos: array<int, array{pista: int, equipo_a: array<int>, equipo_b: array<int>}>, no_juegan: array<int>, coste: float, firma: string}
      */
-    private function calcularAsignacion(array $jugadorIds, int $pistas, int $anio, \Carbon\Carbon $antesDe, AjustesIA $ajustes): array
+    private function calcularAsignacion(array $jugadorIds, int $pistas, int $anio, \Carbon\Carbon $antesDe, AjustesIA $ajustes, array $excluirFirmas = []): array
     {
         $porPista = (int) config('tenis.jugadores_por_pista', 4);
         $enJuego  = $pistas * $porPista;
@@ -260,16 +276,23 @@ class EmparejadorIA
         // posibles frente a 5.775 repartos, y sin esta caché cada cuarteto
         // se recalcularía decenas de veces.
         $cacheCuartetos = [];
+        $excluidas = array_flip($excluirFirmas);
 
         $mejorCoste = INF;
         $candidatos = [];
 
         foreach ($this->repartosPosibles($convocados, $porPista) as $particion) {
+            $claves = array_map(fn ($cuarteto) => $this->clave($cuarteto), $particion);
+
+            if (isset($excluidas[$this->firmaDeParticion($claves)])) {
+                continue;
+            }
+
             $costeTotal = 0.0;
             $pistasCalculadas = [];
 
             foreach ($particion as $indicePista => $cuarteto) {
-                $clave = $this->clave($cuarteto);
+                $clave = $claves[$indicePista];
 
                 $cacheCuartetos[$clave] ??= $this->mejorSplitDeCuarteto(
                     $cuarteto, $niveles, $companerosDist, $rivalesDist,
@@ -299,13 +322,26 @@ class EmparejadorIA
             }
 
             if ($costeTotal <= $mejorCoste + 0.5) {
-                $candidatos[] = ['coste' => $costeTotal, 'pistas' => $pistasCalculadas];
+                $candidatos[] = ['coste' => $costeTotal, 'pistas' => $pistasCalculadas, 'claves' => $claves];
             }
+        }
+
+        if ($candidatos === []) {
+            // Se han excluido todas las combinaciones razonables (solo
+            // puede pasar tras pedir "otro" muchas veces seguidas con
+            // pocos convocados). Se repite la búsqueda sin exclusiones
+            // antes que fallar: peor una repetida que ninguna propuesta.
+            return $this->calcularAsignacion($jugadorIds, $pistas, $anio, $antesDe, $ajustes, []);
         }
 
         $elegido = $candidatos[array_rand($candidatos)];
 
-        return ['partidos' => $elegido['pistas'], 'no_juegan' => $noJuegan];
+        return [
+            'partidos'  => $elegido['pistas'],
+            'no_juegan' => $noJuegan,
+            'coste'     => $elegido['coste'],
+            'firma'     => $this->firmaDeParticion($elegido['claves']),
+        ];
     }
 
     /**
@@ -432,6 +468,23 @@ class EmparejadorIA
         sort($ids);
 
         return implode('-', $ids);
+    }
+
+    /**
+     * Firma estable de un reparto completo: qué 4 (y qué 4, y qué 4) van
+     * juntos, sin importar el orden de las pistas ni quién quedó en cada
+     * lado dentro de cada cuarteto — dos repartos con exactamente la misma
+     * gente en las mismas pistas tienen la misma firma aunque el 2v2
+     * interno sea distinto. Es lo que compara "Probar otro emparejamiento"
+     * para saber si una combinación ya se enseñó esta sesión.
+     *
+     * @param  array<string>  $clavesDeCuarteto  Una clave() por cuarteto.
+     */
+    private function firmaDeParticion(array $clavesDeCuarteto): string
+    {
+        sort($clavesDeCuarteto);
+
+        return implode('|', $clavesDeCuarteto);
     }
 
     /** De los 3 repartos posibles de 4 en 2v2, el de menor coste. */
@@ -754,15 +807,24 @@ class EmparejadorIA
      * Cuánto pesa, en el coste, cada punto de diferencia de nivel_efectivo
      * que pase del umbral. A más peso, más se sacrifica variedad con tal
      * de cuadrar las sumas.
+     *
+     * El "normal" (2.3) sale de un barrido fino entre 2.0 y 3.0 con la
+     * misma simulación de temporada larga, con 14 semillas distintas para
+     * no fiarse del ruido: 2.3 gana a 2.0 en las tres métricas a la vez
+     * (equilibrio, avisos de desequilibrio Y avisos de repetición, sin
+     * trade-off), y más allá de 2.3 el ruido de la simulación ya domina —
+     * probado hasta 3.0, sin una tendencia clara de mejora. El resto de
+     * niveles reescala en la misma proporción que antes (antes
+     * 0.4/1.0/2.0/4.6/10.7 con el "normal" en 2.0).
      */
     private function pesoEquilibrio(AjustesIA $ajustes): float
     {
         return match ($ajustes->prioridad_equilibrio) {
-            1 => 0.2,
-            2 => 0.5,
-            4 => 2.5,
-            5 => 6.0,
-            default => 1.0,
+            1 => 0.5,
+            2 => 1.15,
+            4 => 5.3,
+            5 => 12.3,
+            default => 2.3,
         };
     }
 
@@ -780,17 +842,26 @@ class EmparejadorIA
 
         $plus = match ($ajustes->prioridad_frenar_lider) {
             1 => 0.0,
-            2 => 0.7,
-            3 => 1.3,
-            4 => 2.0,
-            5 => 2.8,
-            default => 1.3,
+            2 => 1.5,
+            3 => 3.0,
+            4 => 4.5,
+            5 => 6.5,
+            default => 3.0,
         };
 
+        // Empate a puntos en cabeza (pasa más de lo que parece: en cuanto
+        // dos personas llevan el mismo número de jornadas jugadas, apenas
+        // hace falta más para que coincidan). $jugadorIds llega ya barajado
+        // desde calcularAsignacion —para decidir quién se queda sin pista si
+        // sobran—, así que sin este ->sort() previo el empate lo resolvía
+        // ese barajado ajeno: cada vez tocaba un líder distinto sin que
+        // nada real hubiera cambiado. Se ordena por id antes de mirar
+        // puntos para que el empate se resuelva siempre igual.
         $liderId = null;
         if ($plus > 0) {
             $puntos  = Jugador::puntosPorJugador($anio);
             $liderId = collect($jugadorIds)
+                ->sort()->values()
                 ->sortByDesc(fn ($id) => (int) ($puntos[$id] ?? 0))
                 ->first();
         }

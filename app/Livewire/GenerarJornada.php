@@ -22,6 +22,13 @@ class GenerarJornada extends Component
     public ?string $error = null;
     public array  $avisos = [];            // repeticiones o desequilibrios que quedaron
 
+    // "Probar otro emparejamiento": firmas ya vistas esta sesión (para no
+    // repetir la misma agrupación) y coste de la primera propuesta, para
+    // poder decir cuánto peor es cada alternativa frente a esa.
+    public array  $firmasVistas    = [];
+    public ?float $costeReferencia = null;
+    public ?float $costeActual     = null;
+
     // Corregir a mano un partido concreto: solo cambia quién va con quién.
     public ?int  $editandoPartidoId = null;
     public array $equiposEdicion    = [];  // [jugador_id => 'a'|'b']
@@ -45,6 +52,9 @@ class GenerarJornada extends Component
     {
         $this->error  = null;
         $this->avisos = [];
+        $this->firmasVistas    = [];
+        $this->costeReferencia = null;
+        $this->costeActual     = null;
         $this->buscarJornadaDeLaFecha();
     }
 
@@ -104,6 +114,12 @@ class GenerarJornada extends Component
         $this->error  = null;
         $this->avisos = [];
 
+        // Generación desde cero: se olvida cualquier "probar otro" de una
+        // fecha o una selección de disponibles anterior.
+        $this->firmasVistas    = [];
+        $this->costeReferencia = null;
+        $this->costeActual     = null;
+
         // Buscar si ya existe la jornada para esta fecha
         $jornadaExistente = Jornada::whereDate('fecha', $this->fecha)->first();
 
@@ -141,6 +157,9 @@ class GenerarJornada extends Component
         }
 
         $this->jornadaId = $jornada->id;
+        $this->firmasVistas[]  = $propuesta['firma'];
+        $this->costeReferencia = $propuesta['coste'];
+        $this->costeActual     = $propuesta['coste'];
 
         Auditoria::registrar(
             'jornada.generada',
@@ -149,6 +168,58 @@ class GenerarJornada extends Component
         );
 
         session()->flash('success', 'Jornada del '.$jornada->fecha->translatedFormat('j \d\e F').' montada.');
+    }
+
+    /**
+     * Vuelve a repartir la misma jornada pero excluyendo explícitamente
+     * todas las agrupaciones de 4 que ya se han enseñado esta sesión — no
+     * es "generar otra vez y cruzar los dedos", busca activamente la
+     * siguiente mejor opción realmente distinta.
+     */
+    public function probarOtro(EmparejadorIA $ia): void
+    {
+        $this->authorize('gestionar-jornadas');
+        $this->error = null;
+
+        $jornada = Jornada::find($this->jornadaId);
+
+        if (! $jornada || $jornada->estado === 'publicada') {
+            $this->error = 'No hay una jornada en borrador para probar otra combinación.';
+            return;
+        }
+
+        try {
+            $propuesta = $ia->proponer($jornada, $this->disponibles, $this->firmasVistas);
+            $this->avisos = $ia->avisos($propuesta, (int) $jornada->fecha->year);
+            $ia->aplicar($jornada, $propuesta);
+        } catch (Throwable $e) {
+            $this->error = $e->getMessage();
+
+            return;
+        }
+
+        $this->firmasVistas[] = $propuesta['firma'];
+        $this->costeActual    = $propuesta['coste'];
+
+        Auditoria::registrar(
+            'jornada.generada',
+            'Jornada del '.$jornada->fecha->format('d/m/Y').' vuelta a repartir (otra combinación) en '.count($propuesta['partidos']).' pistas.',
+            $jornada->id,
+        );
+    }
+
+    /**
+     * Cuánto peor es la combinación actual que la primera que se enseñó,
+     * en tanto por ciento del coste — null si es la primera vez o si por
+     * lo que sea el coste de referencia es 0 (nada que repetir todavía).
+     */
+    public function getDiferenciaConLaPrimeraProperty(): ?int
+    {
+        if ($this->costeReferencia === null || $this->costeActual === null || $this->costeReferencia <= 0.0) {
+            return null;
+        }
+
+        return (int) round(100 * ($this->costeActual - $this->costeReferencia) / $this->costeReferencia);
     }
 
     public function publicar(): void
