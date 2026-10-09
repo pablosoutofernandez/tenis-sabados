@@ -189,10 +189,12 @@ Puntos a tener en cuenta:
 - **Sin tope superior ni inferior** en el nivel; el tope es por partido.
 - **Corregir o borrar un resultado revierte el ajuste** de ese partido antes de aplicar el nuevo
   (se guarda en `partido_jugador.nivel_delta`).
-- **Recalcular la temporada** con los parámetros actuales (vista previa; solo guarda con `--guardar`):
+- **Recalcular la temporada** con el Elo actual, pero más suave que en vivo (k × 0,6, en
+  `config/tenis.php` → `elo.factor_recalculo`). Es una vista previa; solo guarda con `--guardar`:
 
   ```bash
-  php artisan tenis:recalcular-niveles
+  php artisan tenis:recalcular-niveles                # vista previa con k × 0,6
+  php artisan tenis:recalcular-niveles --factor=0.4   # probar otro factor
   php artisan tenis:recalcular-niveles --guardar
   ```
 

@@ -183,14 +183,14 @@ class EloNivelesTest extends TestCase
 
     // ── Recálculo de temporada ──────────────────────────────────────────────
 
-    public function test_recalcular_con_el_mismo_elo_no_cambia_nada(): void
+    public function test_recalcular_con_factor_1_coincide_con_el_elo_en_vivo(): void
     {
         $ids = $this->jugadores([6, 5.5, 5, 4]);
         $this->partido($ids)->registrarResultado($this->sets('6-3 6-4'));
         $this->partido([$ids[0], $ids[2], $ids[1], $ids[3]])->registrarResultado($this->sets('3-6 6-7'));
         $this->partido([$ids[0], $ids[3], $ids[1], $ids[2]])->registrarResultado($this->sets('6-2 1-0'), $ids[1]);
 
-        $recalculo = app(RecalculoNiveles::class)->calcular(2026);
+        $recalculo = app(RecalculoNiveles::class)->calcular(2026, 1.0);
 
         foreach ($recalculo['jugadores'] as $id => $j) {
             $this->assertEqualsWithDelta($j['actual'], $j['nuevo'], 0.001);
@@ -198,13 +198,14 @@ class EloNivelesTest extends TestCase
         $this->assertSame(5.5, $recalculo['jugadores'][$ids[1]]['inicial']);
     }
 
-    public function test_recalcular_aplica_el_elo_nuevo_a_resultados_viejos(): void
+    public function test_recalcular_aplica_el_elo_nuevo_mas_suave_que_en_vivo(): void
     {
         $ids = $this->jugadores([5, 5, 5, 5]);
         $p   = $this->partido($ids);
         $p->registrarResultado($this->sets('6-4 6-4'));
 
-        // Simula un ajuste hecho con el Elo antiguo (+0,05 en vez de +0,45).
+        // Simula un ajuste hecho con el Elo antiguo (+0,05). En vivo hoy sería
+        // +0,45; el recálculo usa k × 0,6 → +0,27.
         Jugador::whereIn('id', [$ids[0], $ids[1]])->update(['nivel' => 5.05]);
         Jugador::whereIn('id', [$ids[2], $ids[3]])->update(['nivel' => 4.95]);
         \DB::table('partido_jugador')->where('partido_id', $p->id)->whereIn('jugador_id', [$ids[0], $ids[1]])->update(['nivel_delta' => 0.05]);
@@ -213,8 +214,8 @@ class EloNivelesTest extends TestCase
         $servicio = app(RecalculoNiveles::class);
         $servicio->guardar($servicio->calcular(2026));
 
-        $this->assertEqualsWithDelta(5.45, Jugador::find($ids[0])->nivel, 0.001);
-        $this->assertEqualsWithDelta(4.55, Jugador::find($ids[2])->nivel, 0.001);
-        $this->assertSame(0.45, $this->deltaDe($p, $ids[0]));
+        $this->assertEqualsWithDelta(5.27, Jugador::find($ids[0])->nivel, 0.001);
+        $this->assertEqualsWithDelta(4.73, Jugador::find($ids[2])->nivel, 0.001);
+        $this->assertSame(0.27, $this->deltaDe($p, $ids[0]));
     }
 }
