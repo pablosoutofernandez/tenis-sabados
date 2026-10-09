@@ -39,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('gestionar-jugadores', fn (User $user) => false);
         Gate::define('gestionar-usuarios', fn (User $user) => false);
         Gate::define('ver-auditoria', fn (User $user) => false);
+        Gate::define('ver-calculo', fn (User $user) => false); // detalle técnico del emparejador
 
         // Registrar el resultado de un partido: solo admin y organizador.
         // Los jugadores ya no anotan sus propios sets — demasiado fácil de

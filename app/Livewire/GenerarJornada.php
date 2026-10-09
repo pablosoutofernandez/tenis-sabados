@@ -6,7 +6,8 @@ use App\Models\Auditoria;
 use App\Models\Jornada;
 use App\Models\Jugador;
 use App\Models\Partido;
-use App\Services\EmparejadorIA;
+use App\Services\Emparejamiento\AvisosJornada;
+use App\Services\Emparejamiento\Emparejador;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
@@ -107,7 +108,7 @@ class GenerarJornada extends Component
         return count($this->disponibles) - ($this->pistas * (int) config('tenis.jugadores_por_pista', 4));
     }
 
-    public function generar(EmparejadorIA $ia): void
+    public function generar(Emparejador $emparejador, AvisosJornada $avisos): void
     {
         $this->authorize('gestionar-jornadas');
 
@@ -143,13 +144,10 @@ class GenerarJornada extends Component
         );
 
         try {
-            $propuesta = $ia->proponer($jornada, $this->disponibles);
+            $propuesta    = $emparejador->proponer($jornada, $this->disponibles);
+            $this->avisos = $avisos->para($jornada, $propuesta);
 
-            // Los avisos se calculan ANTES de guardar: si no, la propia jornada
-            // nueva contaría como repetición de sí misma.
-            $this->avisos = $ia->avisos($propuesta, (int) $jornada->fecha->year);
-
-            $ia->aplicar($jornada, $propuesta);
+            $emparejador->aplicar($jornada, $propuesta);
         } catch (Throwable $e) {
             $this->error = $e->getMessage();
 
@@ -176,7 +174,7 @@ class GenerarJornada extends Component
      * es "generar otra vez y cruzar los dedos", busca activamente la
      * siguiente mejor opción realmente distinta.
      */
-    public function probarOtro(EmparejadorIA $ia): void
+    public function probarOtro(Emparejador $emparejador, AvisosJornada $avisos): void
     {
         $this->authorize('gestionar-jornadas');
         $this->error = null;
@@ -189,9 +187,9 @@ class GenerarJornada extends Component
         }
 
         try {
-            $propuesta = $ia->proponer($jornada, $this->disponibles, $this->firmasVistas);
-            $this->avisos = $ia->avisos($propuesta, (int) $jornada->fecha->year);
-            $ia->aplicar($jornada, $propuesta);
+            $propuesta    = $emparejador->proponer($jornada, $this->disponibles, $this->firmasVistas);
+            $this->avisos = $avisos->para($jornada, $propuesta);
+            $emparejador->aplicar($jornada, $propuesta);
         } catch (Throwable $e) {
             $this->error = $e->getMessage();
 
@@ -345,6 +343,7 @@ class GenerarJornada extends Component
         return view('livewire.generar-jornada', [
             'jugadores' => Jugador::activos()->orderBy('nombre')->get(),
             'jornada'   => $jornada,
+            'nombres'   => $jornada?->calculo ? Jugador::pluck('nombre', 'id')->all() : [],
         ]);
     }
 }

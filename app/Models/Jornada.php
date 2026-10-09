@@ -10,11 +10,12 @@ use Illuminate\Support\Facades\DB;
 
 class Jornada extends Model
 {
-    protected $fillable = ['fecha', 'pistas', 'estado', 'explicacion_ia'];
+    protected $fillable = ['fecha', 'pistas', 'estado', 'explicacion_ia', 'calculo'];
 
     protected $casts = [
-        'fecha'  => 'date',
-        'pistas' => 'integer',
+        'fecha'   => 'date',
+        'pistas'  => 'integer',
+        'calculo' => 'array',
     ];
 
     protected static function booted(): void

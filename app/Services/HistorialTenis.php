@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Jornada;
 use App\Models\Jugador;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
@@ -18,12 +19,11 @@ class HistorialTenis
      *
      * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>
      */
-    public function parejasRecientes(?int $jornadas = null): array
+    public function parejasRecientes(int $jornadas, Carbon $antesDe): array
     {
-        $jornadas ??= (int) config('tenis.no_repetir.parejas_ultimas_jornadas', 4);
         $vistas = [];
 
-        foreach ($this->ultimasJornadasConPartidos($jornadas) as $jornada) {
+        foreach ($this->ultimasJornadasConPartidos($jornadas, $antesDe) as $jornada) {
             foreach ($jornada->partidos as $partido) {
                 foreach (['a', 'b'] as $equipo) {
                     $pareja = $partido->equipo($equipo);
@@ -55,12 +55,11 @@ class HistorialTenis
      *
      * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>
      */
-    public function rivalesRecientes(?int $jornadas = null): array
+    public function rivalesRecientes(int $jornadas, Carbon $antesDe): array
     {
-        $jornadas ??= (int) config('tenis.no_repetir.rivales_ultimas_jornadas', 2);
         $vistos = [];
 
-        foreach ($this->ultimasJornadasConPartidos($jornadas) as $jornada) {
+        foreach ($this->ultimasJornadasConPartidos($jornadas, $antesDe) as $jornada) {
             foreach ($jornada->partidos as $partido) {
                 $a = $partido->equipo('a');
                 $b = $partido->equipo('b');
@@ -92,12 +91,11 @@ class HistorialTenis
      *
      * @return array<int, array{ids: array<int>, nombres: string, fecha: string}>
      */
-    public function partidosRecientes(?int $jornadas = null): array
+    public function partidosRecientes(int $jornadas, Carbon $antesDe): array
     {
-        $jornadas ??= (int) config('tenis.no_repetir.partidos_ultimas_jornadas', 4);
         $vistos = [];
 
-        foreach ($this->ultimasJornadasConPartidos($jornadas) as $jornada) {
+        foreach ($this->ultimasJornadasConPartidos($jornadas, $antesDe) as $jornada) {
             foreach ($jornada->partidos as $partido) {
                 $ids   = $partido->jugadores->pluck('id')->sort()->values()->all();
                 $clave = implode('-', $ids);
@@ -123,13 +121,35 @@ class HistorialTenis
         return min($maximo, intdiv($disponibles, $porPista));
     }
 
-    /** @return Collection<int, Jornada> */
-    private function ultimasJornadasConPartidos(int $cuantas): Collection
+    /** Jornadas con partidos de esta temporada anteriores a $antesDe. */
+    public function jornadasJugadasAntesDe(Carbon $antesDe): int
     {
-        return Jornada::with(['partidos.jugadores', 'sinPista'])
+        return $this->jornadasAnteriores($antesDe)->has('partidos')->count();
+    }
+
+    /**
+     * Las últimas N jornadas con partidos de la misma temporada y anteriores
+     * a $antesDe. Así la jornada que se está montando (o un borrador suyo
+     * de "Probar otro emparejamiento") nunca cuenta como su propia
+     * repetición, ni la temporada pasada como "hace poco".
+     *
+     * @return Collection<int, Jornada>
+     */
+    private function ultimasJornadasConPartidos(int $cuantas, Carbon $antesDe): Collection
+    {
+        return $this->jornadasAnteriores($antesDe)
+            ->has('partidos')
+            ->with(['partidos.jugadores', 'sinPista'])
             ->orderByDesc('fecha')
             ->limit($cuantas)
             ->get();
+    }
+
+    private function jornadasAnteriores(Carbon $antesDe)
+    {
+        return Jornada::query()
+            ->whereYear('fecha', $antesDe->year)
+            ->where('fecha', '<', $antesDe->toDateString());
     }
 
     /**
@@ -150,7 +170,7 @@ class HistorialTenis
      * @return array{0: array, 1: array} [companeros, rivales], cada uno
      *         [jugador_id => [otro_id => array<int> distancias en jornadas]]
      */
-    public function coincidenciasPorDistancia(int $anio, \Carbon\Carbon $antesDe): array
+    public function coincidenciasPorDistancia(int $anio, Carbon $antesDe): array
     {
         $companeros = [];
         $rivales    = [];

@@ -240,6 +240,12 @@
                 </div>
             @endif
 
+            @can('ver-calculo')
+                @if($jornada->calculo)
+                    @include('livewire.partials.calculo-emparejador', ['calculo' => $jornada->calculo, 'nombres' => $nombres])
+                @endif
+            @endcan
+
             <p class="text-[11px] text-ink-700/45 mt-4">
                 Los resultados se anotan en <a href="{{ route('historial') }}" wire:navigate class="font-bold text-brand-300">Partidos</a>.
             </p>

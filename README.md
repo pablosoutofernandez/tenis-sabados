@@ -46,27 +46,51 @@ configurado todavía (ver más abajo).
 minimizando repeticiones y maximizando equilibrio es un problema de optimización combinatoria;
 pedírselo a una IA generativa en una sola pasada de texto daba fallos sistemáticos (se quedaba
 con la combinación más "obvia" en vez de explorar alternativas, llegaba a decir que una
-repetición era inevitable cuando no lo era). Así que `App\Services\EmparejadorIA::calcularAsignacion()`
-prueba entre 400 y 3.000 repartos al azar, puntúa cada uno y se queda con el de menor coste —
-si varios empatan, elige entre ellos al azar, para no converger siempre a la misma solución.
+repetición era inevitable cuando no lo era). Así que `App\Services\Emparejamiento\Emparejador`
+recorre **todos** los repartos posibles de los convocados (como mucho 5.775 con 3 pistas),
+puntúa cada uno y se queda con el de menor coste; si varios empatan, elige entre ellos al azar.
 
-El coste de cada pista suma:
-- Coste alto si repite una pareja o cuarteto dentro de la ventana vetada (`config/tenis.php` → `no_repetir`).
-- Coste creciente según cuántas veces esas combinaciones ya se han dado esta temporada, aunque
-  queden fuera de la ventana — pesa más ser pareja que ser solo rival.
-- Coste al cuadrado por cada punto de diferencia de nivel que pase del umbral tolerado.
-- Un matiz de peso fijo: evita juntar al mejor nivel con el más flojo como compañeros aunque la suma cuadre.
+Todo vive en `app/Services/Emparejamiento/`:
 
-Los pesos de "cuánto pesa cada cosa" se controlan desde **Ajustes IA** (`App\Models\AjustesIA`,
-tabla `ajustes_ia`, una sola fila) y están documentados con detalle en esa misma página —
-incluida la respuesta a "¿se puede quedar atascado repitiendo siempre lo mismo?".
+| Clase | Qué hace |
+|---|---|
+| `Pesos` | **Todas las escalas en un solo sitio.** Lo que vale cada ajuste del 1 al 5. |
+| `ModeloCoste` | Coste de una pista, término a término (`desglose()`). |
+| `NivelEfectivo` | Nivel con el que se cuadran sumas (plus del líder incluido). |
+| `Repartos` | Enumera los repartos posibles. |
+| `Emparejador` | Orquesta: convoca, busca, redacta y guarda. |
+| `AvisosJornada` | Avisos al organizador (repeticiones recientes, pistas descompensadas). |
+| `Simulador` | Temporadas ficticias para calibrar (`php artisan tenis:simular`). |
+
+El coste de cada pista suma, en una única unidad (diferencia de suma de nivel al cuadrado):
+- **Equilibrio**: `peso × diferencia²` entre las sumas de nivel efectivo de las dos parejas.
+- **Parejas repetidas**: cada vez que esos dos ya fueron pareja esta temporada, más cuanto
+  más reciente (100% la semana pasada, 54% hace 2, 32% hace 3… nunca menos del 10%).
+- **Rivales repetidos**: cada cruce que ya se dio; casi solo cuenta la semana pasada (6% a
+  las 2 semanas en "normal", 24% en "máxima").
+
+En "normal", repetir la pareja de la semana pasada equivale a aguantar 3 puntos de
+diferencia de suma, y repetir un cruce, unos 2,3. Calibrado para un grupo con niveles ~3-8.
+
+El admin ve en "Montar jornada" un **Detalle técnico del cálculo** con los pesos en vigor,
+el nivel efectivo de cada uno, el coste de cada pista sumando término a término y las 5
+mejores alternativas.
+
+Para calibrar sin tocar datos reales (usa una base en memoria):
+
+```bash
+php artisan tenis:simular                 # ajustes por defecto
+php artisan tenis:simular --lider=5       # un escenario concreto
+php artisan tenis:simular --barrido       # cada ajuste de 1 a 5
+```
 
 ### Frenar al líder
 
-No es una instrucción de texto: a quien va primero en puntos entre los disponibles de hoy se le
-suma un plus fijo a su nivel antes de calcular nada (`nivelesEfectivos()`). El algoritmo no sabe
-que existe "frenar al líder"; solo ve un nivel más alto, y al intentar equilibrar sumas acaba
-dándole una pareja floja o un rival fuerte. En el slider al mínimo, el plus es 0.
+A quien va primero en puntos entre los convocados de hoy se le suma un plus a su nivel antes
+de calcular nada. El plus es proporcional a la ventaja que le saca al segundo y llega al máximo
+del ajuste con 3 puntos (un partido) de ventaja; con empate en cabeza no hay plus. Los refuerzos
+nunca son líderes. El algoritmo solo ve un nivel más alto y, al cuadrar sumas, le da una pareja
+más floja o rivales más fuertes; no hay ninguna regla que le impida jugar con el más flojo.
 
 ### Corregir un partido a mano
 
@@ -126,36 +150,53 @@ de su id, así que si una cuenta se borra el registro sigue diciendo quién fue.
 No hay ninguna IA en la app — el reparto es un algoritmo determinista (arriba) y el nivel de
 cada jugador se ajusta solo, tras cada resultado, con `App\Services\EloNiveles`.
 
-La idea: compara la suma de nivel de una pareja contra la otra, calcula qué resultado "tocaba"
-según esa diferencia (con la misma fórmula logística que usa el ajedrez, adaptada a esta escala),
-y mueve el nivel de los 4 jugadores según lo lejos que quedó el resultado real de lo esperado.
-Ganar como se esperaba apenas mueve nada; ganar cuando no tocaba (o perder por poco siendo muy
-superior) mueve bastante más.
+La idea: compara cada set con lo que "tocaba" según la diferencia de suma de nivel, y mueve el
+nivel de los 4 según la sorpresa total. **Cada set es una prueba aparte** (el súper tie-break
+con medio peso): en cada uno cuenta a medias el % de juegos (un 6-0 no es un 7-6) y haberlo
+ganado. Las sorpresas de todos los sets se suman, así que un 4-0 (3-0 + súper) mueve casi el
+doble que un 2-0, y un 2-1 mueve lo ganado menos lo perdido. Si todo sale como se esperaba, no
+se mueve nada.
 
 ```php
-$esperadoA = 1 / (1 + 10 ** (($sumaB - $sumaA) / $divisor));   // % de sets que "tocaba" ganar
-$realA     = $setsA / ($setsA + $setsB);                        // % de sets que ganó de verdad
-$delta     = $k * ($realA - $esperadoA);                        // se reparte entre los 2 de la pareja
+$esperadoSet = ½ · 1/(1 + 10^(−dif/10))    // % de juegos: +2 → 61%, +4 → 72%
+             + ½ · 1/(1 + 10^(−dif/4));    // ganar el set: +2 → 76%, +4 → 91%
+$sorpresa    = Σ peso · (½ · %juegos_set + ½ · ganado_set − $esperadoSet);
+$delta       = $k * $sorpresa / 2;         // por jugador, con tope ±1 por partido
 ```
 
-`divisor` y `k` se ajustan en `config/tenis.php` → `elo`. Con los valores por defecto, un
-resultado dentro de lo esperado mueve ~0.05 por jugador; una sorpresa grande puede mover ~0.4-0.5.
+**k (por set) depende de la experiencia de cada jugador esta temporada**: 1,5 en sus 8 primeros
+partidos (periodo provisional) y 0,4 después. Ejemplos entre parejas iguales (pareja ganadora;
+los puntos del torneo siguen topados en 3):
+
+| Resultado | Sets | Provisional | Normal |
+|---|---|---|---|
+| 6-4 6-4 | 2-0 | +0,45 | +0,12 |
+| 6-4 6-4 6-4 | 3-0 | +0,68 | +0,18 |
+| 6-4 6-4 6-4 + súper 10-5 | 4-0 | +0,80 | +0,21 |
+| 6-4 3-6 6-4 | 2-1 | +0,20 | +0,05 |
+| 6-4 4-6 + súper 10-5 | 2-1 | +0,13 | +0,03 |
+| 7-6 7-6 0-6 | 2-1 | +0,03 | +0,01 |
+| 6-4 4-6 6-4 + súper 8-10 | 2-2 | +0,12 | +0,03 |
+
+Todo se ajusta en `config/tenis.php` → `elo`. En simulaciones de 30 jornadas empezando todos en
+5,0, este esquema reduce el error de nivel a menos de la mitad que el antiguo, y una vez el
+nivel es correcto lo mueve poco. Más casos en `tests/Feature/ResultadosTest.php`.
 
 Puntos a tener en cuenta:
-- **El ajuste se reparte a partes iguales** entre los 2 compañeros de cada pareja — no hay forma
-  de saber quién ganó qué punto dentro del partido, así que no se intenta repartir de otra forma.
-- **Los partidos con retirada no mueven nivel**: el marcador no refleja mérito real (el rival se
-  lleva los 3 puntos por norma, no por juego).
-- **Sin tope superior ni inferior**: si alguien juega sistemáticamente por encima de su nivel,
-  puede superar el 10 sin límite — nunca fue un techo real, solo el valor por defecto del
-  formulario. Por eso el campo de nivel en Jugadores es un número normal, no un slider: un
-  slider necesita un máximo fijo, y aquí no lo hay.
-- **Corregir o borrar un resultado revierte el ajuste** que se había aplicado por ese partido en
-  concreto (se guarda en `partido_jugador.nivel_delta` para poder deshacerlo).
-- **Empieza a contar desde el primer resultado que guardes** con este sistema activo; no
-  recalcula nada de lo ya jugado antes.
-- Sigue pudiendo **corregirse el nivel a mano** en cualquier momento desde Jugadores — el Elo no
-  bloquea la edición manual, solo la complementa.
+- **El ajuste es igual para los dos compañeros** salvo que uno esté en periodo provisional y el
+  otro no; no hay forma de saber quién ganó qué punto dentro del partido.
+- **Los partidos con retirada no mueven nivel**: el marcador no refleja mérito real.
+- **Sin tope superior ni inferior** en el nivel; el tope es por partido.
+- **Corregir o borrar un resultado revierte el ajuste** de ese partido antes de aplicar el nuevo
+  (se guarda en `partido_jugador.nivel_delta`).
+- **Recalcular la temporada** con los parámetros actuales (vista previa; solo guarda con `--guardar`):
+
+  ```bash
+  php artisan tenis:recalcular-niveles
+  php artisan tenis:recalcular-niveles --guardar
+  ```
+
+- Sigue pudiendo **corregirse el nivel a mano** en cualquier momento desde Jugadores.
 
 ## Sin IA, en ningún sitio
 

@@ -24,23 +24,22 @@ return [
     // temporada, cuando nadie ha llegado ahí todavía.
     'escala_clasificacion'   => 30,
 
-    // Ventanas de no repetición. Se le piden a la IA como condiciones a cumplir;
-    // más allá de estas jornadas, no repetir es solo una preferencia.
-    // Si la diferencia de nivel entre las dos parejas de una pista supera
-    // esto, se avisa al organizador aunque la IA no haya roto ninguna norma.
+    // Si la diferencia de suma de nivel entre las dos parejas de una pista
+    // llega a esto, se avisa al organizador al revisar la propuesta.
     'aviso_desequilibrio_nivel' => 3,
 
-    // Cada una la estira o la encoge su propio ajuste de la app ("No repetir
-    // parejas" / "No repetir rivales"). La de rivales es más corta a
-    // propósito: cada pista crea 4 cruces y solo 2 parejas, así que con la
-    // misma ventana se vetarían el doble de dúos y no quedaría margen.
+    // Hasta cuántas jornadas atrás AVISAN las repeticiones al revisar una
+    // propuesta (no cambian el reparto: los pesos están en
+    // App\Services\Emparejamiento\Pesos). Cada una la estira o encoge su
+    // ajuste de la app. La de rivales es 1 porque el reparto solo intenta
+    // de verdad no repetir el cruce de la semana pasada.
     'no_repetir' => [
         'partidos_ultimas_jornadas' => 4,   // mismo cuarteto enfrentado
         'parejas_ultimas_jornadas'  => 4,   // misma pareja jugando junta
-        'rivales_ultimas_jornadas'  => 3,   // mismos dos jugadores enfrentados
+        'rivales_ultimas_jornadas'  => 1,   // mismos dos jugadores enfrentados (solo importa la semana pasada)
     ],
 
-    // Normas del torneo que se le pasan a la IA.
+    // Normas del torneo (se muestran en la clasificación).
     'normas' => [
         'Modalidad dobles. Se juega por sets: cada jugador suma 1 punto por set ganado, con un máximo de 3 puntos por jugador y partido.',
         'Cada sábado se juegan 2 o 3 partidos, según los jugadores disponibles.',
@@ -49,26 +48,23 @@ return [
         'Gana el torneo quien más puntos acumule al final del año; en caso de empate se juega un super tie-break de dobles entre los implicados.',
     ],
 
-    // Matiz que no cubre el sistema de prioridades (ver Ajustes IA en la app):
-    // equilibrio, no repetir y frenar al líder ya se gestionan aparte.
-    'objetivos' => [
-        'Dentro de una misma pista, evita juntar al mejor nivel con el más flojo como compañeros si hay alternativa: aunque la suma cuadre, el partido sale más disputado si los 4 niveles están relativamente cerca entre sí.',
-    ],
-
     // Ajuste automático de nivel tras cada resultado (ver App\Services\EloNiveles).
     'elo' => [
-        // Diferencia de suma de niveles entre dos parejas que predice que la
-        // favorita se lleve, de media, el 91% de los sets. Más bajo = los
-        // niveles deciden más antes de jugar; más alto = pesan menos.
-        'divisor' => 4.0,
-        // Magnitud del ajuste por pareja ante la sorpresa máxima posible.
-        // Se reparte a partes iguales entre los 2 compañeros.
-        'k' => 1.0,
-        // Tope duro por partido, independiente de 'k' o 'divisor': nadie
-        // sube ni baja más de esto en un solo partido (y, como cada
-        // jugador solo juega un partido por jornada, es lo mismo que "en
-        // un día").
-        'tope_por_partido' => 0.5,
+        // Lo esperado en cada set (ver EloNiveles::sorpresa): ½ % de juegos
+        // (con +2 de suma ~61%, +4 ~72%) y ½ prob. de ganarlo (+2 → 76%,
+        // +4 → 91%).
+        'divisor_juegos' => 10.0,
+        'divisor_sets'   => 4.0,
+        // Cuánto se mueve cada jugador: k × Σ sorpresa de cada set / 2. Es
+        // POR SET: un 4-0 mueve el doble que un 2-0. Calibrado con
+        // temporadas simuladas; ejemplos en tests/Feature/ResultadosTest.php.
+        'k' => 0.4,
+        // Periodo provisional: en sus primeros N partidos de la temporada
+        // aún no sabemos el nivel de alguien, así que se mueve más rápido.
+        'k_provisional'        => 1.5,
+        'partidos_provisional' => 8,
+        // Tope duro por partido y jugador, sea cual sea k.
+        'tope_por_partido' => 1.0,
         // El súper tie-break sigue contando como un set más a la hora de
         // calcular quién dominó el partido, pero con menos peso que un
         // set normal (formato corto, más variable) — no se ignora del
