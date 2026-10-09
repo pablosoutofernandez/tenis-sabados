@@ -63,6 +63,9 @@ return [
         // aún no sabemos el nivel de alguien, así que se mueve más rápido.
         'k_provisional'        => 1.5,
         'partidos_provisional' => 8,
+        // tenis:recalcular-niveles repite la temporada con k multiplicado por
+        // esto (más suave que en vivo). 1.0 = igual que en vivo.
+        'factor_recalculo' => 0.6,
         // Tope duro por partido y jugador, sea cual sea k.
         'tope_por_partido' => 1.0,
         // El súper tie-break sigue contando como un set más a la hora de

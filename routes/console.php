@@ -70,10 +70,11 @@ Artisan::command('tenis:simular
  * Repite la temporada con el Elo actual (config/tenis.php -> elo) y enseña
  * cómo quedaría cada nivel. Sin --guardar no cambia nada.
  */
-Artisan::command('tenis:recalcular-niveles {--anio= : Temporada (por defecto, la actual)} {--guardar : Aplica el resultado}', function () {
+Artisan::command('tenis:recalcular-niveles {--anio= : Temporada (por defecto, la actual)} {--factor= : Multiplica k (por defecto tenis.elo.factor_recalculo)} {--guardar : Aplica el resultado}', function () {
     $anio      = (int) ($this->option('anio') ?: now()->year);
     $servicio  = app(\App\Services\RecalculoNiveles::class);
-    $recalculo = $servicio->calcular($anio);
+    $factor    = (float) ($this->option('factor') ?? config('tenis.elo.factor_recalculo', 0.6));
+    $recalculo = $servicio->calcular($anio, $factor);
 
     if ($recalculo['jugadores'] === []) {
         $this->info("No hay partidos con marcador en {$anio}.");
@@ -93,7 +94,7 @@ Artisan::command('tenis:recalcular-niveles {--anio= : Temporada (por defecto, la
                 sprintf('%+.2f', $j['nuevo'] - $j['actual']),
             ])->values()->all(),
     );
-    $this->line(count($recalculo['partidos']).' partidos repasados.');
+    $this->line(count($recalculo['partidos']).' partidos repasados con k × '.$factor.'.');
 
     if (! $this->option('guardar')) {
         $this->comment('Vista previa: no se ha guardado nada. Repite con --guardar para aplicarlo.');
@@ -106,6 +107,6 @@ Artisan::command('tenis:recalcular-niveles {--anio= : Temporada (por defecto, la
     }
 
     $servicio->guardar($recalculo);
-    \App\Models\Auditoria::registrar('niveles.recalculados', "Niveles de {$anio} recalculados con el Elo actual.");
+    \App\Models\Auditoria::registrar('niveles.recalculados', "Niveles de {$anio} recalculados con el Elo actual (k × {$factor}).");
     $this->info('Niveles guardados.');
 })->purpose('Recalcula los niveles de la temporada con el Elo actual (vista previa salvo --guardar)');

@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\DB;
  * cada jugador tenía antes de su primer partido con ajuste de ese año y
  * aplica los resultados en orden de fecha.
  *
+ * Por defecto es más suave que el Elo en vivo: k se multiplica por
+ * tenis.elo.factor_recalculo, porque reescribir de golpe una temporada
+ * entera con k completo movía demasiado los niveles a los que ya estaba
+ * acostumbrado el grupo.
+ *
  * El nivel de partida se reconstruye restando al nivel de hoy los ajustes
  * anotados en los partidos del año. Si algún resultado se corrigió con el
  * Elo antiguo, aquel ajuste se sumó dos veces y solo quedó anotado el
@@ -29,8 +34,10 @@ class RecalculoNiveles
      *     partidos: array<int, array<int, float>>,  [partido_id => [jugador_id => delta]]
      * }
      */
-    public function calcular(int $anio): array
+    public function calcular(int $anio, ?float $factorK = null): array
     {
+        $factorK ??= (float) config('tenis.elo.factor_recalculo', 0.6);
+
         $partidos = Partido::with('jugadores', 'jornada')
             ->join('jornadas', 'jornadas.id', '=', 'partidos.jornada_id')
             ->whereYear('jornadas.fecha', $anio)
@@ -66,6 +73,7 @@ class RecalculoNiveles
                     $b->mapWithKeys(fn ($id) => [$id => $nivel[$id]])->all(),
                     $partido->detalle_sets,
                     $previos,
+                    $factorK,
                 );
             }
 

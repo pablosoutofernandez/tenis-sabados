@@ -94,9 +94,10 @@ class EloNiveles
      * @param  array<int, float>  $nivelesA  [jugador_id => nivel] de la pareja A
      * @param  array<int, float>  $nivelesB  Igual, pareja B
      * @param  array<int, int>  $previos  [jugador_id => partidos con ajuste ya jugados esta temporada]
+     * @param  float  $factorK  Multiplica k; el recálculo de temporada lo usa para ser más suave.
      * @return array<int, float>  [jugador_id => delta]
      */
-    public function deltas(array $nivelesA, array $nivelesB, array $detalleSets, array $previos): array
+    public function deltas(array $nivelesA, array $nivelesB, array $detalleSets, array $previos, float $factorK = 1.0): array
     {
         $sorpresaA = $this->sorpresa($detalleSets, array_sum($nivelesA) - array_sum($nivelesB));
         $tope      = (float) config('tenis.elo.tope_por_partido', 1.0);
@@ -104,7 +105,7 @@ class EloNiveles
         $deltas = [];
         foreach ([[$nivelesA, $sorpresaA], [$nivelesB, -$sorpresaA]] as [$niveles, $sorpresa]) {
             foreach (array_keys($niveles) as $id) {
-                $delta = round($this->k($previos[$id] ?? 0) * $sorpresa / 2, 2);
+                $delta = round($factorK * $this->k($previos[$id] ?? 0) * $sorpresa / 2, 2);
                 $deltas[$id] = max(-$tope, min($tope, $delta));
             }
         }
