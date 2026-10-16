@@ -3,6 +3,15 @@
 use Illuminate\Support\Str;
 use Pdo\Mysql;
 
+// Neon usa SNI para saber a qué base va cada conexión, y el libpq de vercel-php es
+// demasiado antiguo para eso. Neon acepta el endpoint dentro de la contraseña
+// ("endpoint=ep-xxx;contraseña"), así que se lo añadimos a las URLs de Neon.
+$pgsqlUrl = preg_replace(
+    '#^(postgres(?:ql)?://[^:/@]+:)(?!endpoint%3D)(?=[^@]*@(ep-[a-z0-9-]+?)(?:-pooler)?\.[^/]*neon\.tech)#',
+    '$1endpoint%3D$2%3B',
+    env('DB_URL', env('DATABASE_URL')) ?? ''
+) ?: null;
+
 return [
 
     /*
@@ -87,7 +96,7 @@ return [
         'pgsql' => [
             'driver' => 'pgsql',
             // DATABASE_URL es la que crea la integración de Neon en Vercel
-            'url' => env('DB_URL', env('DATABASE_URL')),
+            'url' => $pgsqlUrl,
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '5432'),
             'database' => env('DB_DATABASE', 'laravel'),
