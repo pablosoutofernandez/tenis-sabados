@@ -16,9 +16,23 @@ return new class extends Migration
      * quitarle una restricción UNIQUE directamente, así que se reconstruye
      * la tabla entera a mano en vez de confiar en ->change(), que para
      * este tipo de cambio depende de una simulación interna delicada.
+     *
+     * En Postgres no se puede borrar 'users' (auditorias tiene una clave
+     * foránea hacia ella), pero sí modificar columnas, así que allí se usa
+     * ->change() directamente.
      */
     public function up(): void
     {
+        if (DB::getDriverName() !== 'sqlite') {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropUnique(['email']);
+                $table->string('email')->nullable()->change();
+                $table->unique('name');
+            });
+
+            return;
+        }
+
         Schema::create('users_nuevo', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique();
@@ -50,6 +64,18 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::table('users')->whereNull('email')->update(['email' => DB::raw("name || '@local.invalido'")]);
+
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropUnique(['name']);
+                $table->string('email')->nullable(false)->change();
+                $table->unique('email');
+            });
+
+            return;
+        }
+
         Schema::create('users_viejo', function (Blueprint $table) {
             $table->id();
             $table->string('name');

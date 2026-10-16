@@ -1,0 +1,11 @@
+/vendor
+/node_modules
+/public/build
+/public/hot
+/storage/logs/*
+/storage/framework/views/*
+/storage/framework/sessions/*
+/storage/framework/cache/data/*
+/database/*.sqlite
+.env
+*.patch
