@@ -182,7 +182,7 @@ class EloNiveles
             ->whereYear('j.fecha', $fecha->year)
             ->where('j.fecha', '<', $fecha->toDateString())
             ->groupBy('pj.jugador_id')
-            ->pluck(DB::raw('COUNT(*)'), 'pj.jugador_id')
+            ->pluck(DB::raw('COUNT(*) as total'), 'pj.jugador_id')
             ->map(fn ($n) => (int) $n)
             ->all();
     }
